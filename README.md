@@ -9,3 +9,9 @@ pip install
 - chainer 7.8.1
 - matplotlib 3.7.5
 - pyyaml 6.0.2
+
+util.py 63line
+ -> conf = yaml.safe_load(f)
+
+ yaml
+  -> solverとdirnameを絶対パスに変更
