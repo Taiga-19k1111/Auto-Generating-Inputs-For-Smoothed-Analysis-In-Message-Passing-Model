@@ -5,7 +5,7 @@ python 3.8.0
 - https://qiita.com/syusuke9999/items/9d35bcdb4119a1c4957a
 
 C++の環境構築
--https://www.javadrive.jp/cstart/install/index6.html
+- https://www.javadrive.jp/cstart/install/index6.html
 
 pip install
 - numpy 1.24.4
