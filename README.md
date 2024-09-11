@@ -14,12 +14,10 @@ pip install
 - matplotlib 3.7.5
 - pyyaml 6.0.2
 
-util.py 63line
- -> conf = yaml.safe_load(f)
-
- yaml
-  -> solverとdirnameを絶対パスに変更
-
 gpuの設定
 - https://www.kkaneko.jp/tools/win/chainer.html
-- yamlのgpuを0に変更
+- yamlファイルのgpuを0に変更
+
+  ファイルの変更
+  - util.py 63line　-> conf = yaml.safe_load(f)
+  - yamlファイル全般　-> solverとdirnameを絶対パスに変更
