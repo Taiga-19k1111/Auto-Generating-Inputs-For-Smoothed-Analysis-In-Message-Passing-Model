@@ -18,6 +18,6 @@ gpuの設定
 - https://www.kkaneko.jp/tools/win/chainer.html
 - yamlファイルのgpuを0に変更
 
-  ファイルの変更
-  - util.py 63line　-> conf = yaml.safe_load(f)
-  - yamlファイル全般　-> solverとdirnameを絶対パスに変更
+ファイルの変更
+- util.py 63line　-> conf = yaml.safe_load(f)
+- yamlファイル全般　-> solverとdirnameを絶対パスに変更
