@@ -9,7 +9,7 @@ C++の環境構築
 - https://www.binarydevelop.com/article/libgcc_s_dw21dll-36074
 
 pip install
-- numpy 1.24.4
+- numpy 1.23.0
 - chainer 7.8.1
 - matplotlib 3.7.5
 - pyyaml 6.0.2
@@ -19,3 +19,7 @@ util.py 63line
 
  yaml
   -> solverとdirnameを絶対パスに変更
+
+gpuの設定
+- https://www.kkaneko.jp/tools/win/chainer.html
+- yamlのgpuを0に変更
