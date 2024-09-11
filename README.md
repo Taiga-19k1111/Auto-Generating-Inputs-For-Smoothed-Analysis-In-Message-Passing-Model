@@ -6,6 +6,7 @@ python 3.8.0
 
 C++の環境構築
 - https://www.javadrive.jp/cstart/install/index6.html
+- https://www.binarydevelop.com/article/libgcc_s_dw21dll-36074
 
 pip install
 - numpy 1.24.4
