@@ -21,3 +21,6 @@ gpuの設定
 ファイルの変更
 - util.py 63line　-> conf = yaml.safe_load(f)
 - yamlファイル全般　-> solverとdirnameを絶対パスに変更
+
+出力
+savedir, 繰り返し数, 経過時間(秒), ハードネス, 辺数, エントロピー, ma, global_ma, ave
