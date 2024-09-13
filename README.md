@@ -14,6 +14,9 @@ pip install
 - matplotlib 3.7.5
 - pyyaml 6.0.2
 
+make
+- https://qiita.com/ryuso/items/cf0c1d83544103cacf05
+
 gpuの設定
 - https://www.kkaneko.jp/tools/win/chainer.html
 - yamlファイルのgpuを0に変更
