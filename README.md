@@ -28,8 +28,8 @@ gpuの設定
 - util.py 63line　-> conf = yaml.safe_load(f)
 - yamlファイル全般　-> solverとdirnameを絶対パスに変更
 
-出力
-savedir, 繰り返し数, 経過時間(秒), ハードネス, 辺数, エントロピー, ma, global_ma, ave
+出力(log)
+savedir, 繰り返し数, 経過時間(秒), ハードネス, 辺数, エントロピー, 最大値, 全体の最大値(リセット関係), 平均(ave = ave*(1-eps) + r*eps)
 
 やること
 - 簡単な逐次アルゴリズム(ex. クイックソート)での検証
