@@ -13,7 +13,7 @@ import chainer.links as L
 import matplotlib.pyplot as plt
 import yaml
 
-from util import calc_reward, makedir, output_graph, output_sequence, output_distribution, output_distribution_s, load_conf
+from util import calc_reward, makedir, output_graph, output_sequence, output_distribution, output_distribution_s, generate_graph, load_conf
 
 class MLP(chainer.Chain):
     def __init__(self, channels, bias_final):
@@ -143,6 +143,28 @@ def gen_sequence(n, p, xp):
     lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
     a_cpu = chainer.cuda.to_cpu(a)
     return a, sequence, lp
+
+def decide_message(n, p, xp):
+    EPS = 1e-6
+
+    tmp = xp.ndarray(p.data).reshape([n,n])
+    mx = -1
+    send,receive = [-1,-1]
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            if mx < tmp[i][j]:
+                mx = tmp[i][j]
+                send = i
+                receive = j
+
+    a = np.zeros((n,n))
+    a[send][receive] = 1
+    a = a.ravel()
+    lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
+    a_cpu = chainer.cuda.to_cpu(a)
+    return a, [send,receive], lp
     
 def calc_lp(n, p, a, xp, f):
     EPS = 1e-6
@@ -199,6 +221,37 @@ def train():
         opt = chainer.optimizers.Adam(alpha=conf['lr'])
     opt.setup(net)
 
+    # Mnet Training
+    if form == 2:
+        Mchannels = [n*n, 100, 500, n*n]
+        Mnet = MLP(Mchannels, bias)
+        if conf['gpu'] != -1:
+            chainer.cuda.get_device_from_id(conf['gpu']).use()
+            Mnet.to_gpu()
+        
+        if conf['opt'] == 'SGD':
+            Mopt = chainer.optimizers.SGD(lr=conf['lr'])
+        elif conf['opt'] == 'Adam':
+            Mopt = chainer.optimizers.Adam(alpha=conf['lr'])
+        Mopt.setup(Mnet)
+
+        epoch = conf['epoch']
+        p = conf['erp']
+        m = conf['message']
+
+        for ep in range(epoch):
+            post = generate_graph(n,p,m)
+            x = Mnet(post)[0]
+            inputs_li, inputs, lp = decide_message(n,x,Mnet.xp)
+            content = post[inputs[0]][inputs[1]]
+            inputs.append(content)
+            r = calc_reward(n, inputs, solver, tmpdir, form)
+            loss = - r * lp
+
+            Mnet.cleargrads()
+            loss.backward()
+            Mopt.update()
+
     stop = 0
 
     pool_size = 10
@@ -216,6 +269,7 @@ def train():
 
     start_time = time.time()
 
+    # HiSampler Training
     while True:
         iteration += 1
         from_restart += 1
