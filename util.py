@@ -56,12 +56,20 @@ def output_distribution_s(filename, n, x):
     #         f.write('{:.3f}'.format(x[i].item()))
     #         f.write('\n')    
 
+def generate_graph(n,p,max_m):
+    graph = np.random.binomial(1,p,(n,n))
+    message = np.random.randint(0,max_m,(n,n))
+    post = graph*message
+    return post
+
 def calc_reward(n, inputs, solver, tmpdir, form):
     filename = os.path.join(tmpdir, 'calc_reward_{}'.format(os.getpid()))
     if form == 0:
         output_graph(filename, n, inputs)
     elif form == 1:
         output_sequence(filename, n, inputs)
+    elif form == 2:
+        
     reward = float(get_output("{} < {}".format(solver, filename)))
     os.remove(filename)
     return reward 
