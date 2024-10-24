@@ -34,7 +34,7 @@ def output_sequence(filename, n , sequence):
         for i in range(n):
             f.write('{} '.format(sequence[i]))   
 
-def output_distribution(filename, n, x):
+def output_distribution_graph(filename, n, x):
     P = np.zeros((n, n), dtype='f')
     cnt = 0
     for i in range(n):
@@ -51,7 +51,7 @@ def output_distribution(filename, n, x):
                 f.write('{:.3f}'.format(P[i, j]))
             f.write('\n')
 
-def output_distribution_s(filename, n, x):
+def output_distribution_sequence(filename, n, x):
     x = x.reshape(n,n)
     with open(filename, 'w') as f:
         f.write('{}\n'.format(n))
