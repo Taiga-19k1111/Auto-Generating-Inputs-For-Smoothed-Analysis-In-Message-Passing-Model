@@ -1,0 +1,17 @@
+solver: 'C:\Users\sudo__7lummo7\Desktop\HiSampler\HiSampler-master\solvers\coloring.exe'
+n: 50
+iteration: 100000
+restart: 10000
+seed: 1234
+dirname: 'C:\Users\sudo__7lummo7\Desktop\HiSampler\HiSampler-master\results\coloring'
+gpu: 0
+form: 0
+
+opt: 'Adam'
+
+p: 0.1
+
+eps: 0.01
+
+lr: 0.0001
+noreplay: False

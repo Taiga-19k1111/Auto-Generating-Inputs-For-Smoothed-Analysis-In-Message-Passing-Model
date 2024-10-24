@@ -31,6 +31,9 @@ solvers/quicksort_rnd: solvers/src/quicksort_random.cpp
 solvers/quicksort_check: solvers/src/quicksort_check.cpp
 	$(CXX) $(CXXFLAGS) solvers/src/quicksort_check.cpp -o solvers/quicksort_check
 
+solvers/shortest_path: solvers/src/shortest_path.cpp
+	$(CXX) $(CXXFLAGS) solvers/src/shortest_path.cpp -o solvers/shortest_path
+
 clean:
 	rm -r solvers
 	mkdir solvers

@@ -1,0 +1,17 @@
+solver: 'C:\Users\sudo__7lummo7\Desktop\HiSampler\HiSampler-master\solvers\clique.exe'
+n: 32
+iteration: 100000
+restart: 10000
+seed: 1234
+dirname: 'C:\Users\sudo__7lummo7\Desktop\HiSampler\HiSampler-master\results\clique'
+gpu: 0
+form: 0
+
+opt: 'Adam'
+
+p: 0.9
+
+eps: 0.01
+
+lr: 0.0001
+noreplay: False
