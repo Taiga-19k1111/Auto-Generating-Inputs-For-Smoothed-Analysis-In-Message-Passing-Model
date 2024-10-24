@@ -70,14 +70,13 @@ def output_distribution_sequence(filename, n, x):
     #         f.write('{:.3f}'.format(x[i].item()))
     #         f.write('\n')    
 
-def update_post(post,output):
+def update_post(post,output,n):
     if output[0] == '':
         return post
     send = int(output.pop(0))
     for o in output:
         receive,message = list(map(int,o.split()))
-        print(send,receive)
-        post = np.append(post[send][receive],message)
+        post[send*n+receive].append(message)
     return post
 
 def gen_random_graph(n,p,max_m):
@@ -107,8 +106,11 @@ def calc_reward(n, inputs, solver, tmpdir, form):
 
     if form == 2:
         output = get_output("{} < {}".format(solver, filename), form)
-        new_post = update_post(inputs[3],output)
-        return new_post, new_post.size
+        new_post = update_post(inputs[3],output,n)
+        reward = 0
+        for p in new_post:
+            reward += len(p)
+        return new_post, reward
     else:
         reward = float(get_output("{} < {}".format(solver, filename), form))
         os.remove(filename)

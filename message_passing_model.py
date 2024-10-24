@@ -176,7 +176,7 @@ def train():
     for ep in range(epoch):
         G = gen_random_graph(n,p,m)
         G = Mnet.xp.array([G]).astype('f')
-        post = np.empty((n,n,0), dtype=float)
+        post = [[] for _ in range(n*n)]
         x = Mnet(G)[0]
         inputs_li, inputs, lp = decide_message(n,x,G.reshape([(n*2)+1,n]),Mnet.xp)
         inputs.append(post)
