@@ -5,14 +5,28 @@ import argparse
 import numpy as np
 import yaml
 
-def get_output(command):
-    return subprocess.check_output(command, shell=True).decode()
+def get_output(command, form):
+    if form == 2:
+        o = subprocess.check_output(command, shell=True).decode().strip().split('\n')
+        return o
+    else:
+        return subprocess.check_output(command, shell=True).decode()
     
-def output_graph(filename, n, edges):
+def output_graph(filename, n, inputs, form):
     with open(filename, 'w') as f:
-        f.write('{} {}\n'.format(n, len(edges)))
-        for e in edges:
-            f.write('{} {}\n'.format(e[0], e[1]))
+        if form == 0:
+            f.write('{} {}\n'.format(n, len(inputs)))
+            for e in inputs:
+                f.write('{} {}\n'.format(e[0], e[1]))
+        elif form == 2:
+            send,receive,G,_ = inputs
+            f.write('{} {} {}\n'.format(n, send, receive))
+            for i in range((n*2)+1):
+                for j in range(n):
+                    if j != 0:
+                        f.write(' ')
+                    f.write('{}'.format(G[i][j]))
+                f.write('\n')                    
 
 def output_sequence(filename, n , sequence):
     with open(filename, 'w') as f:
@@ -56,23 +70,49 @@ def output_distribution_s(filename, n, x):
     #         f.write('{:.3f}'.format(x[i].item()))
     #         f.write('\n')    
 
-def generate_graph(n,p,max_m):
-    graph = np.random.binomial(1,p,(n,n))
-    message = np.random.randint(0,max_m,(n,n))
-    post = graph*message
+def update_post(post,output):
+    if output[0] == '':
+        return post
+    send = int(output.pop(0))
+    for o in output:
+        receive,message = list(map(int,o.split()))
+        print(send,receive)
+        post = np.append(post[send][receive],message)
     return post
+
+def gen_random_graph(n,p,max_m):
+    edges = np.random.binomial(1,p,n*(n-1)//2)
+    message = np.random.randint(0,max_m,(n,n))
+    weight = np.random.randint(0,max_m,n*(n-1)//2)
+    graph = np.zeros((n,n))
+    post = np.ones([n,n])*-1
+    count = 0
+    for i in range(n-1):
+        for j in range(i+1,n):
+            if edges[count] == 1:
+                graph[i][j] = weight[count]
+                graph[j][i] = weight[count]
+                post[i][j] = message[i][j]
+                post[j][i] = message[j][i]
+            count += 1
+    node_memory = np.random.randint(0,max_m,n)
+    return np.concatenate([graph.ravel(),post.ravel(),node_memory]).ravel()
 
 def calc_reward(n, inputs, solver, tmpdir, form):
     filename = os.path.join(tmpdir, 'calc_reward_{}'.format(os.getpid()))
-    if form == 0:
-        output_graph(filename, n, inputs)
+    if form == 0 or form == 2:
+        output_graph(filename, n, inputs, form)
     elif form == 1:
         output_sequence(filename, n, inputs)
-    elif form == 2:
-        
-    reward = float(get_output("{} < {}".format(solver, filename)))
-    os.remove(filename)
-    return reward 
+
+    if form == 2:
+        output = get_output("{} < {}".format(solver, filename), form)
+        new_post = update_post(inputs[3],output)
+        return new_post, new_post.size
+    else:
+        reward = float(get_output("{} < {}".format(solver, filename), form))
+        os.remove(filename)
+        return reward 
 
 def makedir(dirname):
     if not os.path.exists(dirname):
@@ -94,6 +134,9 @@ def load_conf():
     parser.add_argument('--restart', type=int, default=None)
     parser.add_argument('--noreplay', action='store_true')
     parser.add_argument('--opt', type=str, default='Adam')
+    parser.add_argument('--epoch', type=int, default=None)
+    parser.add_argument('--erp', type=float, default=None)
+    parser.add_argument('--message', type=int, default=None)
     args = parser.parse_args()
 
     with open(args.conf) as f:
