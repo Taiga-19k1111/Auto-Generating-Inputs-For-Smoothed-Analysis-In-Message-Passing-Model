@@ -50,6 +50,7 @@ int main(){
     if(m < dist[receive]){
         cout << receive << endl;
         REP(i, n){
+            if(i == receive){continue;}
             cout << i << " " << m+G[receive][i] << endl;
         }
     }

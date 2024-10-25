@@ -47,10 +47,10 @@ def gen_edges(n, p, xp):
     
 def gen_initial_graph_state(n, p, xp):
     EPS = 1e-6
-    G = np.zeros([(n*2)+1,n], dtype=float)
+    G = xp.zeros([(n*2)+1,n], dtype=float)
 
     a = xp.random.binomial(1, p.data[:n*(n-1)//2], n*(n-1)//2)
-    post = np.empty([n,n], dtype=float)
+    post = [[] for _ in range(n*n)]
     count = 0
     for i in range(n-1):
         for j in range(i+1,n):
@@ -71,13 +71,13 @@ def gen_initial_graph_state(n, p, xp):
         if G[start_node][i] != 0:
             G[start_node+n][i] = G[start_node][i]
             post[start_node][i].append(G[start_node][i])
-        G[n*2][i] = np.inf
+        G[n*2][i] = xp.inf
     G[n*2][start_node] = 0
 
     a = xp.concatenate([a,xp.asarray(G[n*2])])
     lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
 
-    return np.array(G.ravel()),post,a,lp
+    return xp.array(G.ravel()),post,a,lp
 
 def decide_message(n, p, G, xp):
     EPS = 1e-6
@@ -181,7 +181,7 @@ def train():
         inputs_li, inputs, lp = decide_message(n,x,G.reshape([(n*2)+1,n]),Mnet.xp)
         inputs.append(post)
         _,r = calc_reward(n, inputs, solver, tmpdir, form)
-        print(ep,r)
+        print(ep,r,inputs)
         loss = - r * lp
 
         Mnet.cleargrads()
@@ -215,7 +215,8 @@ def train():
 
         r = 0
         G,post,inputs_li,lp = gen_initial_graph_state(n, x, net.xp)
-        while post.size != 0:
+        check = True
+        while check:
             mx = Mnet(G)[0]
             inputs_li, inputs, lp = decide_message(n,mx,G.reshape([(n*2)+1,n]),Mnet.xp)
             inputs.append(post)
@@ -228,6 +229,12 @@ def train():
                         G[i+n][j].append(post[i][j][0])
                         post[i][j] = np.delete(post[i][j],0)
             r += 1
+
+            check = False
+            for p in post:
+                if p != []:
+                    check = True
+                    break
 
         entropy = F.mean(x * F.log(x + 1e-6) + (1 - x) * F.log(1 - x + 1e-6))
 
