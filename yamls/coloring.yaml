@@ -1,9 +1,9 @@
-solver: 'C:\Users\sudo__7lummo7\Desktop\HiSampler\HiSampler-master\solvers\coloring.exe'
+solver: 'solvers\coloring.exe'
 n: 50
 iteration: 100000
 restart: 10000
 seed: 1234
-dirname: 'C:\Users\sudo__7lummo7\Desktop\HiSampler\HiSampler-master\results\coloring'
+dirname: 'results\coloring'
 gpu: 0
 form: 0
 

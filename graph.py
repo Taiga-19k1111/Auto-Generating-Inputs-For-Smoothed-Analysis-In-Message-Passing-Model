@@ -138,7 +138,7 @@ def train():
             stop += 1
         if r > global_ma:
             global_ma = r
-            output_graph(os.path.join(savedir, 'output_{}.txt'.format(r)), n, inputs)
+            output_graph(os.path.join(savedir, 'output_{}.txt'.format(r)), n, inputs, form)
             output_distribution_graph(os.path.join(savedir, 'distribution_{}.txt'.format(r)), n, x.data)
             chainer.serializers.save_npz(os.path.join(savedir, 'snapshot_at_reward_{}'.format(r)), net)
 

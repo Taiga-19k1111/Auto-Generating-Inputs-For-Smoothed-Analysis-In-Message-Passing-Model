@@ -45,7 +45,7 @@ def gen_edges(n, p, xp):
     edges = np.array(np.tril_indices(n, -1)).T[np.where(a_cpu == 1)]
     return a, edges, lp
     
-def gen_initial_graph_state(n, p, xp):
+def gen_initial_graph_state(n, p, m, xp):
     EPS = 1e-6
     G = xp.zeros([(n*2)+1,n], dtype=float)
 
@@ -54,7 +54,7 @@ def gen_initial_graph_state(n, p, xp):
     count = 0
     for i in range(n-1):
         for j in range(i+1,n):
-            G[i+n][j] = -1
+            G[i+n][j] = p.data[(n*(n-1)//2)+count]%m
             if a[count] == 1:
                 G[i][j] = p.data[(n*(n-1)//2)+count]
                 G[j][i] = G[i][j]
@@ -71,7 +71,7 @@ def gen_initial_graph_state(n, p, xp):
         if G[start_node][i] != 0:
             G[start_node+n][i] = G[start_node][i]
             post[start_node][i].append(G[start_node][i])
-        G[n*2][i] = xp.inf
+        G[n*2][i] = 10**8
     G[n*2][start_node] = 0
 
     a = xp.concatenate([a,xp.asarray(G[n*2])])
@@ -173,20 +173,20 @@ def train():
     p = conf['erp']
     m = conf['message']
 
-    for ep in range(epoch):
-        G = gen_random_graph(n,p,m)
-        G = Mnet.xp.array([G]).astype('f')
-        post = [[] for _ in range(n*n)]
-        x = Mnet(G)[0]
-        inputs_li, inputs, lp = decide_message(n,x,G.reshape([(n*2)+1,n]),Mnet.xp)
-        inputs.append(post)
-        _,r = calc_reward(n, inputs, solver, tmpdir, form)
-        print(ep,r,inputs)
-        loss = - r * lp
+    # for ep in range(epoch):
+    #     G = gen_random_graph(n,p,m)
+    #     G = Mnet.xp.array([G]).astype('f')
+    #     post = [[] for _ in range(n*n)]
+    #     x = Mnet(G)[0]
+    #     inputs_li, inputs, lp = decide_message(n,x,G.reshape([(n*2)+1,n]),Mnet.xp)
+    #     inputs.append(post)
+    #     _,r = calc_reward(n, inputs, solver, tmpdir, form)
+    #     print(ep,r,inputs)
+    #     loss = - r * lp
 
-        Mnet.cleargrads()
-        loss.backward()
-        Mopt.update()
+    #     Mnet.cleargrads()
+    #     loss.backward()
+    #     Mopt.update()
 
     stop = 0
 
@@ -214,7 +214,9 @@ def train():
         x = net(z)[0]
 
         r = 0
-        G,post,inputs_li,lp = gen_initial_graph_state(n, x, net.xp)
+        G,post,inputs_li,lp = gen_initial_graph_state(n, x, m, net.xp)
+        G = Mnet.xp.array([G]).astype('f')
+        print(G)
         check = True
         while check:
             mx = Mnet(G)[0]
