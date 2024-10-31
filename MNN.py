@@ -196,22 +196,22 @@ def train():
     x = 0
     G = gen_worstcase(n)
     G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
-    G = Mnet.xp.array([G]).astype('f')
     check = True
     while check:
-        mx = Mnet(G)[0]
+        mx = Mnet(Mnet.xp.array([G]).astype('f'))[0]
         inputs_li, inputs, lp = decide_message(n,mx,G.reshape([(n*2)+1,n]),Mnet.xp)
         inputs.append(post)
+        print(inputs[0],inputs[1],post)
         post,_ = calc_reward(n, inputs, solver, tmpdir, form)
-        for i in range(n):
-            for j in range(n):
-                if post[i*n+j] == []:
-                    G[(i+n)*n+j] = -1
-                if G[i+n][j] == 0:
-                    G[i+n][j] = post[i*n+j].pop(0)
+        ind = ((inputs[0]+n)*n)+inputs[1]
+        if post[ind-n*n] == []:
+            G[ind] = -1
+        else:
+            G[ind] = post[ind-n*n].pop(0)
         r += 1
 
-        print(post)
+        print(r,post)
+        print(G)
 
         check = False
         for p in post:

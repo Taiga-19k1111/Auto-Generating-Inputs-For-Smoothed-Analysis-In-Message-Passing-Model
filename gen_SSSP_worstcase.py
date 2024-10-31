@@ -16,5 +16,3 @@ def gen_worstcase(n):
                     G[i][j] = 0
             G[j][i] = G[i][j]
     return G
-
-print(gen_worstcase(13))
