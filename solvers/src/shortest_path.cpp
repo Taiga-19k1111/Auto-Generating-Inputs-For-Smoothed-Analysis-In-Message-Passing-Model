@@ -51,6 +51,7 @@ int main(){
         cout << receive << endl;
         REP(i, n){
             if(i == receive){continue;}
+            if(G[receive][i] == -1){continue;}
             cout << i << " " << m+G[receive][i] << endl;
         }
     }

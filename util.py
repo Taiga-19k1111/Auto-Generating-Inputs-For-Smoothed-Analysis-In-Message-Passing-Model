@@ -103,7 +103,7 @@ def calc_reward(n, inputs, solver, tmpdir, form):
         output_graph(filename, n, inputs, form)
     elif form == 1:
         output_sequence(filename, n, inputs)
-        
+
     if form == 2:
         output = get_output("{} < {}".format(solver, filename), form)
         new_post = update_post(inputs[3],output,n)
