@@ -78,7 +78,6 @@ def update_state(inputs,output,n):
         G[-n+send] = dist
         for o in output:
             receive,message = list(map(int,o.split()))
-            print(send,receive,message)
             post[send*n+receive].append(message)
 
     for i in range(n*n):
@@ -90,22 +89,28 @@ def update_state(inputs,output,n):
     return post, G
 
 def gen_random_graph(n,p,max_m):
+    post = [[] for _ in range(n*n)]
     edges = np.random.binomial(1,p,n*(n-1)//2)
-    message = np.random.randint(0,max_m,(n,n))
+    message = np.random.binomial(1,p,(n,n))
+    contents = np.random.randint(0,max_m,(n,n))
     weight = np.random.randint(0,max_m,n*(n-1)//2)
     graph = np.zeros((n,n))
-    post = np.ones([n,n])*-1
+    ini_post = np.ones([n,n])*-1
     count = 0
     for i in range(n-1):
         for j in range(i+1,n):
             if edges[count] == 1:
                 graph[i][j] = weight[count]
                 graph[j][i] = weight[count]
-                post[i][j] = message[i][j]
-                post[j][i] = message[j][i]
+                if message[i][j] == 1:
+                    ini_post[i][j] = contents[i][j]
+                    post[i*n+j].append(message[i][j])
+                if message[j][i] == 1:
+                    ini_post[j][i] = contents[j][i]
+                    post[j*n+i].append(contents[j][i])
             count += 1
     node_memory = np.random.randint(0,max_m,n)
-    return np.concatenate([graph.ravel(),post.ravel(),node_memory]).ravel()
+    return np.concatenate([graph.ravel(),ini_post.ravel(),node_memory]).ravel(),post
 
 def calc_reward(n, inputs, solver, tmpdir, form):
     filename = os.path.join(tmpdir, 'calc_reward_{}'.format(os.getpid()))

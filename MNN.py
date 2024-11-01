@@ -178,12 +178,9 @@ def train():
     epoch = conf['epoch']
     p = conf['erp']
     m = conf['message']
-    epoch = 0
     for ep in range(epoch):
-        G = gen_random_graph(n,p,m)
-        G = Mnet.xp.array([G]).astype('f')
-        post = [[] for _ in range(n*n)] # gen_random_graphで生成
-        x = Mnet(G)[0]
+        G, post = gen_random_graph(n,p,m)
+        x = Mnet(Mnet.xp.array([G]).astype('f'))[0]
         inputs_li, inputs, lp = decide_message(n,x,G,post,Mnet.xp)
         _,_,r = calc_reward(n, inputs, solver, tmpdir, form)
         loss = - r * lp
@@ -197,29 +194,18 @@ def train():
     G = gen_worstcase(n)
     G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
     check = True
-    print(post)
     while check:
         mx = Mnet(Mnet.xp.array([G]).astype('f'))[0]
         inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
-        print(inputs[0],inputs[1])
         post,G,_ = calc_reward(n, inputs, solver, tmpdir, form)
-        # ind = ((inputs[0]+n)*n)+inputs[1]
-        # if post[ind-n*n] == []:
-        #     G[ind] = -1
-        # else:
-        #     G[ind] = post[ind-n*n].pop(0)
         r += 1
-
-        print(post)
-        print(np.reshape(G[n*n:],[n+1,n]))
+        print(r,inputs[0],inputs[1])
 
         check = False
         for p in post:
             if p != []:
                 check = True
                 break
-    
-    print(r)
 
 if __name__ == '__main__':
     train()
