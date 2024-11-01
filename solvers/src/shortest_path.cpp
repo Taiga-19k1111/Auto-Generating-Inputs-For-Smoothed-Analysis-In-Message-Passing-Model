@@ -48,7 +48,7 @@ int main(){
 
     int m = post[send][receive];
     if(m < dist[receive]){
-        cout << receive << endl;
+        cout << receive << " " << m << endl;
         REP(i, n){
             if(i == receive){continue;}
             if(G[receive][i] == -1){continue;}

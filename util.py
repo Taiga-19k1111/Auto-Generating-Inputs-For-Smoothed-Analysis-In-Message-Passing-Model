@@ -25,7 +25,7 @@ def output_graph(filename, n, inputs, form):
                 for j in range(n):
                     if j != 0:
                         f.write(' ')
-                    f.write('{}'.format(G[i][j]))
+                    f.write('{}'.format(G[i*n+j]))
                 f.write('\n')                    
 
 def output_sequence(filename, n , sequence):
@@ -70,14 +70,24 @@ def output_distribution_sequence(filename, n, x):
     #         f.write('{:.3f}'.format(x[i].item()))
     #         f.write('\n')    
 
-def update_post(post,output,n):
-    if output[0] == '':
-        return post
-    send = int(output.pop(0))
-    for o in output:
-        receive,message = list(map(int,o.split()))
-        post[send*n+receive].append(message)
-    return post
+def update_state(inputs,output,n):
+    post = inputs[3]
+    G = inputs[2]
+    if output[0] != '':
+        send,dist = list(map(int,output.pop(0).split()))
+        G[-n+send] = dist
+        for o in output:
+            receive,message = list(map(int,o.split()))
+            print(send,receive,message)
+            post[send*n+receive].append(message)
+
+    for i in range(n*n):
+        if post[i] == []:
+            G[i+n*n] = -1
+        else:
+            G[i+n*n] = post[i][0]
+        
+    return post, G
 
 def gen_random_graph(n,p,max_m):
     edges = np.random.binomial(1,p,n*(n-1)//2)
@@ -106,11 +116,11 @@ def calc_reward(n, inputs, solver, tmpdir, form):
 
     if form == 2:
         output = get_output("{} < {}".format(solver, filename), form)
-        new_post = update_post(inputs[3],output,n)
+        new_post, new_G = update_state(inputs,output,n)
         reward = 0
         for p in new_post:
             reward += len(p)
-        return new_post, reward
+        return new_post, new_G, reward
     else:
         reward = float(get_output("{} < {}".format(solver, filename), form))
         os.remove(filename)

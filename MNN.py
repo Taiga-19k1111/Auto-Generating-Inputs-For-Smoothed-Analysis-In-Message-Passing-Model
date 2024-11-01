@@ -84,31 +84,32 @@ def gen_initial_graph_state(g, n, p, m, xp):
 
     return xp.array(G.ravel()),post,a,lp
 
-def decide_message(n, p, G, xp):
+def decide_message(n, p, G, post, xp):
     EPS = 1e-6
-    tmp = xp.array(p.data).reshape([n,n])
+    tmp = p.data
     mx = -1
     send,receive = [-1,-1]
     for i in range(n):
         for j in range(n):
+            ind = i*n+j
             if i == j:
                 continue
-            if G[i][j] == -1:
+            if G[ind] == -1:
                 continue
-            if G[i+n][j] == -1:
+            if post[ind] == []:
                 continue
 
-            if mx < tmp[i][j]:
-                mx = tmp[i][j]
+            if mx < tmp[ind]:
+                mx = tmp[ind]
                 send = i
                 receive = j
-
+    post[(send*n)+receive].pop(0)
     a = xp.zeros((n,n))
     a[send][receive] = 1
     a = a.ravel()
     lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
     a_cpu = chainer.cuda.to_cpu(a)
-    return a, [send,receive,G], lp
+    return a, [send,receive,G,post], lp
     
 def calc_lp(n, p, a, xp, f):
     EPS = 1e-6
@@ -181,11 +182,10 @@ def train():
     for ep in range(epoch):
         G = gen_random_graph(n,p,m)
         G = Mnet.xp.array([G]).astype('f')
-        post = [[] for _ in range(n*n)]
+        post = [[] for _ in range(n*n)] # gen_random_graphで生成
         x = Mnet(G)[0]
-        inputs_li, inputs, lp = decide_message(n,x,G.reshape([(n*2)+1,n]),Mnet.xp)
-        inputs.append(post)
-        _,r = calc_reward(n, inputs, solver, tmpdir, form)
+        inputs_li, inputs, lp = decide_message(n,x,G,post,Mnet.xp)
+        _,_,r = calc_reward(n, inputs, solver, tmpdir, form)
         loss = - r * lp
 
         Mnet.cleargrads()
@@ -197,21 +197,21 @@ def train():
     G = gen_worstcase(n)
     G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
     check = True
+    print(post)
     while check:
         mx = Mnet(Mnet.xp.array([G]).astype('f'))[0]
-        inputs_li, inputs, lp = decide_message(n,mx,G.reshape([(n*2)+1,n]),Mnet.xp)
-        inputs.append(post)
-        print(inputs[0],inputs[1],post)
-        post,_ = calc_reward(n, inputs, solver, tmpdir, form)
-        ind = ((inputs[0]+n)*n)+inputs[1]
-        if post[ind-n*n] == []:
-            G[ind] = -1
-        else:
-            G[ind] = post[ind-n*n].pop(0)
+        inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
+        print(inputs[0],inputs[1])
+        post,G,_ = calc_reward(n, inputs, solver, tmpdir, form)
+        # ind = ((inputs[0]+n)*n)+inputs[1]
+        # if post[ind-n*n] == []:
+        #     G[ind] = -1
+        # else:
+        #     G[ind] = post[ind-n*n].pop(0)
         r += 1
 
-        print(r,post)
-        print(G)
+        print(post)
+        print(np.reshape(G[n*n:],[n+1,n]))
 
         check = False
         for p in post:
