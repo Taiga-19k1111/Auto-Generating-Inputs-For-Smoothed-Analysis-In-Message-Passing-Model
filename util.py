@@ -38,9 +38,8 @@ def output_distribution_graph(filename, n, x):
     P = np.zeros((n, n), dtype='f')
     cnt = 0
     for i in range(n):
-        for j in range(i):
+        for j in range(n):
             P[i, j] = x[cnt]
-            P[j, i] = x[cnt]
             cnt += 1
     with open(filename, 'w') as f:
         f.write('{}\n'.format(n))
@@ -73,12 +72,17 @@ def output_distribution_sequence(filename, n, x):
 def update_state(inputs,output,n):
     post = inputs[3]
     G = inputs[2]
+    r = 0
     if output[0] != '':
-        send,dist = list(map(int,output.pop(0).split()))
-        G[-n+send] = dist
+        send,memory = list(map(int,output.pop(0).split()))
         for o in output:
             receive,message = list(map(int,o.split()))
             post[send*n+receive].append(message)
+            # r = r+1
+        r = 1/(G[-n+send]-memory)
+        # r = G[-n+send]-memory
+        # r = memory
+        G[-n+send] = memory
 
     for i in range(n*n):
         if post[i] == []:
@@ -86,7 +90,7 @@ def update_state(inputs,output,n):
         else:
             G[i+n*n] = post[i][0]
         
-    return post, G
+    return post, G, r
 
 def gen_random_graph(n,p,max_m):
     post = [[] for _ in range(n*n)]
@@ -121,10 +125,10 @@ def calc_reward(n, inputs, solver, tmpdir, form):
 
     if form == 2:
         output = get_output("{} < {}".format(solver, filename), form)
-        new_post, new_G = update_state(inputs,output,n)
-        reward = 0
-        for p in new_post:
-            reward += len(p)
+        new_post, new_G, reward = update_state(inputs,output,n)
+        # reward = 0
+        # for p in new_post:
+        #     reward += len(p)
         return new_post, new_G, reward
     else:
         reward = float(get_output("{} < {}".format(solver, filename), form))

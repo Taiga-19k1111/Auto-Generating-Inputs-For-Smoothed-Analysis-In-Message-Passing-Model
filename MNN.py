@@ -163,6 +163,7 @@ def train():
     opt.setup(net)
 
     # Mnet Training
+    # Mchannels = [n*n*2+n, n*10, n*n/2, n*n]
     Mchannels = [n*n*2+n, 100, 500, n*n]
     Mnet = MLP(Mchannels, bias)
     if conf['gpu'] != -1:
@@ -178,34 +179,52 @@ def train():
     epoch = conf['epoch']
     p = conf['erp']
     m = conf['message']
-    for ep in range(epoch):
-        G, post = gen_random_graph(n,p,m)
+
+    memo_x = []
+    memo_y = []
+    r = 0
+    x = 0
+    for ep in range(epoch+1):
+        if ep%1000 == 0:
+            r = 0
+            x = 0
+            G = gen_worstcase(n)
+            G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
+            edges = []
+            check = True
+            while check:
+                mx = Mnet(Mnet.xp.array([G]).astype('f'))[0]
+                inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
+                post,G,_ = calc_reward(n, inputs, solver, tmpdir, form)
+                r += 1
+                edges.append(inputs[0:2])
+
+                check = False
+                for po in post:
+                    if po != []:
+                        check = True
+                        break
+
+            memo_x.append(ep)
+            memo_y.append(r)
+            output_graph(os.path.join(savedir, 'output_{}.txt'.format(ep)), n, edges, 0)
+            plt.clf()
+            plt.plot(memo_x, memo_y)
+            plt.savefig(os.path.join(savedir, 'graph.png'))
+            
+        G = gen_worstcase(n)
+        G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
+        G2, post = gen_random_graph(n,p,m)
+        for i in range(n*n,len(G)):
+            G[i] = G2[i]
         x = Mnet(Mnet.xp.array([G]).astype('f'))[0]
         inputs_li, inputs, lp = decide_message(n,x,G,post,Mnet.xp)
         _,_,r = calc_reward(n, inputs, solver, tmpdir, form)
-        loss = - r * lp
+        loss = -r * lp
 
         Mnet.cleargrads()
         loss.backward()
         Mopt.update()
-
-    r = 0
-    x = 0
-    G = gen_worstcase(n)
-    G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
-    check = True
-    while check:
-        mx = Mnet(Mnet.xp.array([G]).astype('f'))[0]
-        inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
-        post,G,_ = calc_reward(n, inputs, solver, tmpdir, form)
-        r += 1
-        print(r,inputs[0],inputs[1])
-
-        check = False
-        for p in post:
-            if p != []:
-                check = True
-                break
 
 if __name__ == '__main__':
     train()
