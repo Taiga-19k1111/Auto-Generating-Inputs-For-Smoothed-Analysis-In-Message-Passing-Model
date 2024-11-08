@@ -87,22 +87,29 @@ def gen_initial_graph_state(g, n, p, m, xp):
 def decide_message(n, p, G, post, xp):
     EPS = 1e-6
     tmp = p.data
-    mx = -1
+    total = 0
     send,receive = [-1,-1]
     for i in range(n):
         for j in range(n):
             ind = i*n+j
-            if i == j:
-                continue
-            if G[ind] == -1:
-                continue
-            if post[ind] == []:
-                continue
+            if i == j or G[ind] == -1 or post[ind] == []:
+                tmp[ind] = 0
 
-            if mx < tmp[ind]:
-                mx = tmp[ind]
+            total += tmp[ind]
+            # if mx < tmp[ind]:
+            #     mx = tmp[ind]
+            #     send = i
+            #     receive = j
+    rnd = np.random.uniform(0,total)
+    cum = 0
+    for i in range(n):
+        for j in range(n):
+            ind = i*n+j
+            cum += tmp[ind]
+            if rnd < cum:
                 send = i
                 receive = j
+                break
     post[(send*n)+receive].pop(0)
     a = xp.zeros((n,n))
     a[send][receive] = 1
@@ -184,7 +191,7 @@ def train():
     memo_y = []
     r = 0
     x = 0
-    for ep in range(epoch+1):
+    for ep in range(1,epoch+1):
         if ep%1000 == 0:
             r = 0
             x = 0
@@ -215,12 +222,16 @@ def train():
         G = gen_worstcase(n)
         G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
         G2, post = gen_random_graph(n,p,m)
+        message =  np.random.randint(0,m,n*n)
         for i in range(n*n,len(G)):
-            G[i] = G2[i]
+            if i < len(G)-n and G[i-n*n] == -1:
+                G[i] = -1
+            else:
+                G[i] = message[i-n*n]
         x = Mnet(Mnet.xp.array([G]).astype('f'))[0]
         inputs_li, inputs, lp = decide_message(n,x,G,post,Mnet.xp)
         _,_,r = calc_reward(n, inputs, solver, tmpdir, form)
-        loss = -r * lp
+        loss = r * lp
 
         Mnet.cleargrads()
         loss.backward()
