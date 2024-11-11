@@ -194,7 +194,7 @@ def train():
     memo_y = []
     r = 0
     x = 0
-    for ep in range(0,epoch+1):
+    for ep in range(1,epoch+1):
         if ep%100 == 0:
             r = 0
             x = 0
@@ -238,9 +238,11 @@ def train():
         for i in range(n):
             G[-i-1] = G2[-i-1]
         r = 0
-        for _ in range(100):
+        lp = 0
+        for _ in range(10):
             x = Mnet(Mnet.xp.array([G]).astype('f'))[0]
-            inputs_li, inputs, lp = decide_message(n,x,G,post,Mnet.xp)
+            inputs_li, inputs, tmp_lp = decide_message(n,x,G,post,Mnet.xp)
+            lp += tmp_lp
             post,G,tmp_r = calc_reward(n, inputs, solver, tmpdir, form)
             r += tmp_r
 
@@ -249,7 +251,7 @@ def train():
                 if po != []:
                     check = True
                     break
-        loss = r * lp
+        loss = -r * lp
 
         Mnet.cleargrads()
         loss.backward()

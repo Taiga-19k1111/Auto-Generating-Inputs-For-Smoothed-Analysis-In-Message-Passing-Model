@@ -80,10 +80,10 @@ def update_state(inputs,output,n):
             receive,message = list(map(int,o.split()))
             post[send*n+receive].append(message)
             # r += message
-            # count += 1
+            count += 1
             # r = r+1
         # r = 1/(G[-n+send]-memory)
-        r = (G[-n+send]-memory)
+        r = count/(G[-n+send]-memory)
         # r = memory
         # r = r/count
         G[-n+send] = memory
