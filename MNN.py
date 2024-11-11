@@ -238,12 +238,18 @@ def train():
         for i in range(n):
             G[-i-1] = G2[-i-1]
         r = 0
-        for _ in range(10):
+        for _ in range(100):
             x = Mnet(Mnet.xp.array([G]).astype('f'))[0]
             inputs_li, inputs, lp = decide_message(n,x,G,post,Mnet.xp)
             post,G,tmp_r = calc_reward(n, inputs, solver, tmpdir, form)
             r += tmp_r
-        loss = -r * lp
+
+            check = False
+            for po in post:
+                if po != []:
+                    check = True
+                    break
+        loss = r * lp
 
         Mnet.cleargrads()
         loss.backward()
