@@ -79,11 +79,11 @@ def update_state(inputs,output,n):
         for o in output:
             receive,message = list(map(int,o.split()))
             post[send*n+receive].append(message)
-            r += message
-            count += 1
+            # r += message
+            # count += 1
             # r = r+1
         # r = 1/(G[-n+send]-memory)
-        r = G[-n+send]-memory
+        r = (G[-n+send]-memory)
         # r = memory
         # r = r/count
         G[-n+send] = memory
@@ -112,7 +112,7 @@ def gen_random_graph(n,p,max_m):
                 graph[j][i] = weight[count]
                 if message[i][j] == 1:
                     ini_post[i][j] = contents[i][j]
-                    post[i*n+j].append(message[i][j])
+                    post[i*n+j].append(contents[i][j])
                 if message[j][i] == 1:
                     ini_post[j][i] = contents[j][i]
                     post[j*n+i].append(contents[j][i])
