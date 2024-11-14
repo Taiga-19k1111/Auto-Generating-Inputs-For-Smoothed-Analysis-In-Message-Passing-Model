@@ -72,7 +72,7 @@ def output_distribution_sequence(filename, n, x):
 def update_state(inputs,output,n):
     post = inputs[3]
     G = inputs[2]
-    r = 0
+    r = 1e-6
     count = 0
     if output[0] != '':
         send,memory = list(map(int,output.pop(0).split()))
@@ -83,9 +83,11 @@ def update_state(inputs,output,n):
             count += 1
             # r = r+1
         # r = 1/(G[-n+send]-memory)
-        r = count/(G[-n+send]-memory)
-        # r = memory
+        # r = count/(G[-n+send]-memory)
+        r = memory
         # r = r/count
+        # r = (G[-n+send]-memory)/count
+        # r = (G[-n+send]-memory)
         G[-n+send] = memory
 
     for i in range(n*n):
@@ -162,6 +164,7 @@ def load_conf():
     parser.add_argument('--epoch', type=int, default=None)
     parser.add_argument('--erp', type=float, default=None)
     parser.add_argument('--message', type=int, default=None)
+    parser.add_argument('--step', type=int, default=None)
     args = parser.parse_args()
 
     with open(args.conf) as f:
