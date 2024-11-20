@@ -32,10 +32,17 @@ class MLP(chainer.Chain):
         for i in range(self.n_layers):
             x = self['l{}'.format(i)](x)
             if i + 1 == self.n_layers:
-                x = F.sigmoid(x)
+                x = F.relu(x)
             else:
                 x = F.relu(x)
         return x
+    
+    def set_parameter(self, i, w, b):
+        self['l{}'.format(i)].W = w
+        self['l{}'.format(i)].b = b
+
+    def get_parameter(self, i):
+        return self['l{}'.format(i)].W, self['l{}'.format(i)].b
 
 class Memory():
     def __init__(self, memory_size=100000):
@@ -129,6 +136,10 @@ def decide_message(n, p, G, post, xp):
     #     if send != -1:
     #         break
     ind = int(xp.argmax(p))
+    # if post[ind] == []:
+    #     print(xp.array(post))
+    #     tmp = xp.where(xp.array(post) != [], 1, 0)
+    #     ind = xp.random.choice(n*n, p=tmp)
     send = ind//n
     receive = ind%n
     post[ind].pop(0)
@@ -165,8 +176,8 @@ def train():
     makedir(tmpdir)
 
     E_START = 1.0
-    E_STOP = 0.01
-    E_DECAY_RATE = 0.001
+    E_STOP = 0
+    E_DECAY_RATE = 0.00001
     GAMMA = 0.99
 
     np.random.seed(conf['seed'])
@@ -202,20 +213,20 @@ def train():
     # Mchannels = [n*n*2+n, n*10, n*n/2, n*n]
     Mchannels = [n*n*2+n, 100, 500, n*n]
     Mnet = MLP(Mchannels, bias)
-    # target_Mnet = MLP(Mchannels, bias)
+    target_Mnet = MLP(Mchannels, bias)
     if conf['gpu'] != -1:
         chainer.cuda.get_device_from_id(conf['gpu']).use()
         Mnet.to_gpu()
-        # target_Mnet.to_gpu()
+        target_Mnet.to_gpu()
     
     if conf['opt'] == 'SGD':
         Mopt = chainer.optimizers.SGD(lr=conf['lr'])
-        # target_Mopt = chainer.optimizers.SGD(lr=conf['lr'])
+        target_Mopt = chainer.optimizers.SGD(lr=conf['lr'])
     elif conf['opt'] == 'Adam':
         Mopt = chainer.optimizers.Adam(alpha=conf['lr'])
-        # target_Mopt = chainer.optimizers.Adam(alpha=conf['lr'])
+        target_Mopt = chainer.optimizers.Adam(alpha=conf['lr'])
     Mopt.setup(Mnet)
-    # target_Mopt.setup(target_Mopt)
+    target_Mopt.setup(target_Mnet)
 
     epoch = conf['epoch']
     p = conf['erp']
@@ -239,6 +250,7 @@ def train():
 
     memo_x = []
     memo_y = []
+    total_step = 0
     for ep in range(1,epoch+1):
         # iteration += 1
         # from_restart += 1
@@ -250,16 +262,24 @@ def train():
         G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, Mnet.xp)
         edges = []
         check = True
-        target_Mnet = Mnet.copy('copy')
+
+        for c in range(len(channels)-1):
+            W,b = Mnet.get_parameter(c)
+            target_Mnet.set_parameter(c,W,b)
+
         while check:
+            total_step += 1
             step += 1
-            epsilon = E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*step)
+            epsilon = E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*total_step)
 
             if epsilon > Mnet.xp.random.rand():
                 rnd = Mnet.xp.random.uniform(0,1,n*n)
                 mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*rnd
             else:
-                mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*target_Mnet(Mnet.xp.array([G]).astype('f'))[0].data
+                mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*Mnet(Mnet.xp.array([G]).astype('f'))[0].data
+                if (mx == 0).all():
+                    rnd = Mnet.xp.random.uniform(0,1,n*n)
+                    mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*rnd
             inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
             post, next_G, _ = calc_reward(n, inputs, solver, tmpdir, form)
             edges.append(inputs[0:2])
@@ -285,13 +305,15 @@ def train():
 
                 minibatch = memory.sample(pool_size)
                 for i, [G_b,inputs_b,reward_b,next_G_b] in enumerate(minibatch):
-                    output = target_Mnet(Mnet.xp.array([G_b]).astype('f'))[0][inputs_b].data
+                    output = Mnet(Mnet.xp.array([G_b]).astype('f'))[0].data
                     if not (next_G_b[n*n:n*n*2] == -1).all():
                         target = reward_b + GAMMA*Mnet.xp.amax(target_Mnet(Mnet.xp.array([next_G_b]).astype('f'))[0].data)
                     else:
                         target = Mnet.xp.array(reward_b).astype('f')
-                    
-                    loss = F.mean_squared_error(target,output)
+                    targets = output.copy()
+                    targets[inputs_b] = target
+
+                    loss = F.mean_squared_error(targets,output)
                     Mnet.cleargrads()
                     loss.backward()
                     Mopt.update()
@@ -302,6 +324,8 @@ def train():
         plt.clf()
         plt.plot(memo_x, memo_y)
         plt.savefig(os.path.join(savedir, 'graph.png'))
+
+        print(epsilon, np.mean(memo_y))
  
         # G = gen_worstcase(n)
         # G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)

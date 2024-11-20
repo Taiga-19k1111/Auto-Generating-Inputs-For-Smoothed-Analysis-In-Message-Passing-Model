@@ -84,10 +84,10 @@ def update_state(inputs,output,n):
             # r = r+1
         # r = 1/(G[-n+send]-memory)
         # r = count/(G[-n+send]-memory)
-        r = memory
+        # r = memory
         # r = r/count
         # r = (G[-n+send]-memory)/count
-        # r = (G[-n+send]-memory)
+        r = (G[-n+send]-memory)
         G[-n+send] = memory
 
     for i in range(n*n):

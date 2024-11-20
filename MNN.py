@@ -4,6 +4,7 @@ import time
 import matplotlib
 matplotlib.use('Agg')
 
+from collections import deque
 import numpy as np
 import chainer
 import chainer.functions as F
@@ -31,10 +32,25 @@ class MLP(chainer.Chain):
         for i in range(self.n_layers):
             x = self['l{}'.format(i)](x)
             if i + 1 == self.n_layers:
-                x = F.sigmoid(x)
+                x = F.relu(x)
+                # x = F.sigmoid(x)
             else:
                 x = F.relu(x)
         return x
+
+class Memory():
+    def __init__(self, memory_size=100000):
+        self.buffer = deque(maxlen=memory_size)
+    
+    def add(self, experience):
+        self.buffer.append(experience)
+
+    def sample(self,batch_size):
+        idx = np.random.choice(np.arange(len(self.buffer)), size=batch_size, replace=False)
+        return [self.buffer[i] for i in idx]
+    
+    def __len__(self):
+        return len(self.buffer)
 
 def gen_edges(n, p, xp):
     EPS = 1e-6
@@ -121,12 +137,9 @@ def decide_message(n, p, G, post, xp):
     a_cpu = chainer.cuda.to_cpu(a)
     return a, [send,receive,G,post], lp
     
-def calc_lp(n, p, a, xp, f):
+def calc_lp(n, p, a, xp):
     EPS = 1e-6
-    if f == 0:
-        lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
-    elif f == 1:
-        lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
+    lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
     return lp
 
 def train():
@@ -213,35 +226,49 @@ def train():
         from_restart += 1
         # if ep%10 == 0:
         # lp = Mnet.xp.zeros(0)
-        r = 0
+        step = 0
+        mean_r = 0
         x = 0
         G = gen_worstcase(n)
         G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, Mnet.xp)
-        edges = []
+        memory = Memory()
         check = True
-        target_Mnet = Mnet.copy('copy')
+        # target_Mnet = Mnet.copy('copy')
         while check:
-            mx = target_Mnet(Mnet.xp.array([G]).astype('f'))[0]
+            # mx = target_Mnet(Mnet.xp.array([G]).astype('f'))[0]
+            mx = Mnet(Mnet.xp.array([G]).astype('f'))[0]
             inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
-            post, G, r = calc_reward(n, inputs, solver, tmpdir, form)
-            edges.append(inputs[0:2])
+            post, next_G, r = calc_reward(n, inputs, solver, tmpdir, form)
+            inputs.append(r)
+            memory.add(inputs)
+            mean_r += r
+            step += 1
 
-            loss = -r * lp
-            entropy = F.mean(mx * F.log(mx + 1e-6) + (1 - mx) * F.log(1 - mx + 1e-6))
-            print(mx)
-            
-            Mnet.cleargrads()
-            loss.backward()
-            Mopt.update()
             check = False
             for po in post:
                 if po != []:
                     check = True
                     break
 
+        mean_r = mean_r/step
+        target_Mnet = Mnet.copy('copy')
+        loss = 0
+        minibatch = memory.sample(min(len(memory),pool_size))
+        for i, [send,receive,G,post,r] in enumerate(minibatch):
+            a = Mnet.xp.zeros(n*n)
+            a[send*n+receive] = 1
+            p = Mnet(Mnet.xp.array([G]).astype('f'))[0].data
+            lp = calc_lp(n,p,a,Mnet.xp)
+            loss += (r-mean_r)*lp
+            # entropy = F.mean(mx * F.log(mx + 1e-6) + (1 - mx) * F.log(1 - mx + 1e-6))
+            
+        Mnet.cleargrads()
+        loss.backward()
+        Mopt.update()
+
         memo_x.append(ep)
-        memo_y.append(r)
-        output_graph(os.path.join(savedir, 'output_{}.txt'.format(ep)), n, edges, 0)
+        memo_y.append(step)
+        # output_graph(os.path.join(savedir, 'output_{}.txt'.format(ep)), n, edges, 0)
         plt.clf()
         plt.plot(memo_x, memo_y)
         plt.savefig(os.path.join(savedir, 'graph.png'))
