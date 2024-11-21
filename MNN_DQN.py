@@ -32,9 +32,10 @@ class MLP(chainer.Chain):
         for i in range(self.n_layers):
             x = self['l{}'.format(i)](x)
             if i + 1 == self.n_layers:
-                x = F.relu(x)
+                # x = F.relu(x)
+                continue
             else:
-                x = F.relu(x)
+                x = F.leaky_relu(x)
         return x
     
     def set_parameter(self, i, w, b):
@@ -233,8 +234,8 @@ def train():
     m = conf['message']
     step = conf['step']
 
-    pool_size = 10
-    start_training = 20
+    pool_size = 100
+    start_training = 150
     r_bests = []
     inputs_bests = []
     z_bests = []
@@ -251,11 +252,14 @@ def train():
     memo_x = []
     memo_y = []
     total_step = 0
+    total_max = 0
     for ep in range(1,epoch+1):
         # iteration += 1
         # from_restart += 1
         # if ep%10 == 0:
         # lp = Mnet.xp.zeros(0)
+        cmnn = 0
+        zero = 0
         step = 0
         x = 0
         G = gen_worstcase(n)
@@ -272,14 +276,17 @@ def train():
             step += 1
             epsilon = E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*total_step)
 
-            if epsilon > Mnet.xp.random.rand():
+            if epsilon > Mnet.xp.random.uniform(0,1,1):
                 rnd = Mnet.xp.random.uniform(0,1,n*n)
                 mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*rnd
             else:
+                cmnn += 1
                 mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*Mnet(Mnet.xp.array([G]).astype('f'))[0].data
-                if (mx == 0).all():
+                if post[int(Mnet.xp.argmax(mx))] == []:
+                    zero += 1
                     rnd = Mnet.xp.random.uniform(0,1,n*n)
                     mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*rnd
+            
             inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
             post, next_G, _ = calc_reward(n, inputs, solver, tmpdir, form)
             edges.append(inputs[0:2])
@@ -293,9 +300,9 @@ def train():
             if check:
                 reward = 0
             else:
-                reward = step
+                reward = 1-(1/step)
 
-            if step > start_training:
+            if total_step > start_training:
                 memory.add([G,inputs[0]*n+inputs[1],reward,next_G])
 
             G = next_G
@@ -305,15 +312,13 @@ def train():
 
                 minibatch = memory.sample(pool_size)
                 for i, [G_b,inputs_b,reward_b,next_G_b] in enumerate(minibatch):
-                    output = Mnet(Mnet.xp.array([G_b]).astype('f'))[0].data
+                    output = Mnet(Mnet.xp.array([G_b]).astype('f'))[0][inputs_b].data
                     if not (next_G_b[n*n:n*n*2] == -1).all():
                         target = reward_b + GAMMA*Mnet.xp.amax(target_Mnet(Mnet.xp.array([next_G_b]).astype('f'))[0].data)
                     else:
                         target = Mnet.xp.array(reward_b).astype('f')
-                    targets = output.copy()
-                    targets[inputs_b] = target
 
-                    loss = F.mean_squared_error(targets,output)
+                    loss = F.mean_squared_error(target,output)
                     Mnet.cleargrads()
                     loss.backward()
                     Mopt.update()
@@ -325,8 +330,29 @@ def train():
         plt.plot(memo_x, memo_y)
         plt.savefig(os.path.join(savedir, 'graph.png'))
 
-        print(epsilon, np.mean(memo_y))
+        print(epsilon, np.mean(memo_y), cmnn, zero)
  
+    G = gen_worstcase(n)
+    G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, Mnet.xp)
+    check = True
+    step = 0
+    while check:
+        step += 1
+        mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*Mnet(Mnet.xp.array([G]).astype('f'))[0].data
+        if (mx == 0).all():
+            rnd = Mnet.xp.random.uniform(0,1,n*n)
+            mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*rnd
+        
+        output_distribution_graph(os.path.join(savedir, 'distribution_{}.txt'.format(step)), n, mx)
+        inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
+        post, G, _ = calc_reward(n, inputs, solver, tmpdir, form)
+
+        check = False
+        for po in post:
+            if po != []:
+                check = True
+                break
+
         # G = gen_worstcase(n)
         # G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
         # G2,_ = gen_random_graph(n,p,m)

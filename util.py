@@ -42,7 +42,7 @@ def output_distribution_graph(filename, n, x):
             P[i, j] = x[cnt]
             cnt += 1
     with open(filename, 'w') as f:
-        f.write('{}\n'.format(n))
+        # f.write('{}\n'.format(n))
         for i in range(n):
             for j in range(n):
                 if j != 0:
