@@ -32,10 +32,10 @@ class MLP(chainer.Chain):
         for i in range(self.n_layers):
             x = self['l{}'.format(i)](x)
             if i + 1 == self.n_layers:
-                x = F.relu(x)
-                # x = F.sigmoid(x)
+                # x = F.relu(x)
+                x = F.sigmoid(x)
             else:
-                x = F.relu(x)
+                x = F.leaky_relu(x)
         return x
 
 class Memory():
@@ -103,37 +103,25 @@ def gen_initial_graph_state(g, n, p, m, xp):
 def decide_message(n, p, G, post, xp):
     EPS = 1e-6
     tmp = p.data
-    send,receive = [-1,-1]
     total = 0
-    for i in range(n):
-        for j in range(n):
-            ind = i*n+j
-            if post[ind] == []:
-                tmp[ind] = 0
-            else:
-                tmp[ind] += EPS
-            total += tmp[ind]
-            # if mx < tmp[ind]:
-            #     mx = tmp[ind]
-            #     send = i
-            #     receive = j
-    rnd = xp.random.uniform(0,total)
-    cum = 0
-    for i in range(n):
-        for j in range(n):
-            ind = i*n+j
-            cum += tmp[ind]
-            if rnd < cum:
-                send = i
-                receive = j
-                break
-        if send != -1:
-            break
-    post[(send*n)+receive].pop(0)
-    a = xp.zeros((n,n))
-    a[send][receive] = 1
-    a = a.ravel()
-    lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
+    for i in range(n*n):
+        if post[i] == []:
+            tmp[i] = xp.nan
+    pi = xp.zeros(n*n)
+    exp_tmp = xp.exp(tmp)
+    exp_sum = xp.nansum(exp_tmp)
+    for i in range(n*n):
+        if xp.isnan(exp_tmp[i]):
+            pi[i] = 0
+        else:
+            pi[i] = exp_tmp[i]/exp_sum
+    ind = int(xp.random.choice(n*n,1,p=pi))
+    send = ind//n
+    receive = ind%n
+    post[ind].pop(0)
+    a = xp.zeros(n*n)
+    a[ind] = 1
+    lp = F.sum(a * F.log(pi + EPS) + (1 - a) * F.log(1 - pi + EPS))
     a_cpu = chainer.cuda.to_cpu(a)
     return a, [send,receive,G,post], lp
     
@@ -219,15 +207,14 @@ def train():
     iteration = 0
     from_restart = 0
 
+    max_r = -1
+
     memo_x = []
     memo_y = []
     for ep in range(1,epoch+1):
         iteration += 1
-        from_restart += 1
-        # if ep%10 == 0:
-        # lp = Mnet.xp.zeros(0)
         step = 0
-        mean_r = 0
+        r = 0
         x = 0
         G = gen_worstcase(n)
         G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, Mnet.xp)
@@ -238,10 +225,8 @@ def train():
             # mx = target_Mnet(Mnet.xp.array([G]).astype('f'))[0]
             mx = Mnet(Mnet.xp.array([G]).astype('f'))[0]
             inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
-            post, next_G, r = calc_reward(n, inputs, solver, tmpdir, form)
-            inputs.append(r)
-            memory.add(inputs)
-            mean_r += r
+            post, next_G, _ = calc_reward(n, inputs, solver, tmpdir, form)
+            memory.add(lp)
             step += 1
 
             check = False
@@ -249,19 +234,11 @@ def train():
                 if po != []:
                     check = True
                     break
-
-        mean_r = mean_r/step
-        target_Mnet = Mnet.copy('copy')
+         
         loss = 0
-        minibatch = memory.sample(min(len(memory),pool_size))
-        for i, [send,receive,G,post,r] in enumerate(minibatch):
-            a = Mnet.xp.zeros(n*n)
-            a[send*n+receive] = 1
-            p = Mnet(Mnet.xp.array([G]).astype('f'))[0].data
-            lp = calc_lp(n,p,a,Mnet.xp)
-            loss += (r-mean_r)*lp
-            # entropy = F.mean(mx * F.log(mx + 1e-6) + (1 - mx) * F.log(1 - mx + 1e-6))
-            
+        for i in range(len(memory)):
+            loss += memory.buffer[i]*(-r)
+        loss = loss/step
         Mnet.cleargrads()
         loss.backward()
         Mopt.update()
@@ -272,7 +249,25 @@ def train():
         plt.clf()
         plt.plot(memo_x, memo_y)
         plt.savefig(os.path.join(savedir, 'graph.png'))
- 
+
+        if max_r < step:
+            max_r = step
+        else:
+            from_restart += 1
+        
+        if from_restart > conf['restart']:
+            Mnet = MLP(Mchannels, bias)
+            if conf['gpu'] != -1:
+                chainer.cuda.get_device_from_id(conf['gpu']).use()
+                Mnet.to_gpu()
+            
+            if conf['opt'] == 'SGD':
+                Mopt = chainer.optimizers.SGD(lr=conf['lr'])
+            elif conf['opt'] == 'Adam':
+                Mopt = chainer.optimizers.Adam(alpha=conf['lr'])
+            Mopt.setup(Mnet)
+            from_restart = 0
+            max_r = -1
         # G = gen_worstcase(n)
         # G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
         # G2,_ = gen_random_graph(n,p,m)

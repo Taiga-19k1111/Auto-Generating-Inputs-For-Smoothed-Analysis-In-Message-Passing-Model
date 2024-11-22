@@ -38,9 +38,10 @@ class MLP(chainer.Chain):
                 x = F.leaky_relu(x)
         return x
     
-    def set_parameter(self, i, w, b):
+    def set_parameter(self, i, w, b=[]):
         self['l{}'.format(i)].W = w
-        self['l{}'.format(i)].b = b
+        if len(b) != 0:
+            self['l{}'.format(i)].b = b
 
     def get_parameter(self, i):
         return self['l{}'.format(i)].W, self['l{}'.format(i)].b
@@ -109,7 +110,6 @@ def gen_initial_graph_state(g, n, p, m, xp):
 
 def decide_message(n, p, G, post, xp):
     EPS = 1e-6
-    # tmp = p.data
     # send,receive = [-1,-1]
     # total = 0
     # for i in range(n):
@@ -136,11 +136,17 @@ def decide_message(n, p, G, post, xp):
     #             break
     #     if send != -1:
     #         break
-    ind = int(xp.argmax(p))
+    # ind = int(xp.argmax(p))
     # if post[ind] == []:
     #     print(xp.array(post))
-    #     tmp = xp.where(xp.array(post) != [], 1, 0)
-    #     ind = xp.random.choice(n*n, p=tmp)
+
+    # ind = int(xp.argmax(p))
+    memo = []
+    for i in range(n*n):
+        if post[i] != []:
+            memo.append([p[i],i])
+    memo = sorted(memo, reverse=True)
+    ind = memo[0][1]
     send = ind//n
     receive = ind%n
     post[ind].pop(0)
@@ -178,7 +184,7 @@ def train():
 
     E_START = 1.0
     E_STOP = 0
-    E_DECAY_RATE = 0.00001
+    E_DECAY_RATE = 0.0001
     GAMMA = 0.99
 
     np.random.seed(conf['seed'])
@@ -212,7 +218,7 @@ def train():
 
     # Mnet Training
     # Mchannels = [n*n*2+n, n*10, n*n/2, n*n]
-    Mchannels = [n*n*2+n, 100, 500, n*n]
+    Mchannels = [n*n*2+n, n, n, n, n*n]
     Mnet = MLP(Mchannels, bias)
     target_Mnet = MLP(Mchannels, bias)
     if conf['gpu'] != -1:
@@ -235,7 +241,7 @@ def train():
     step = conf['step']
 
     pool_size = 100
-    start_training = 150
+    start_training = 200
     r_bests = []
     inputs_bests = []
     z_bests = []
@@ -259,7 +265,6 @@ def train():
         # if ep%10 == 0:
         # lp = Mnet.xp.zeros(0)
         cmnn = 0
-        zero = 0
         step = 0
         x = 0
         G = gen_worstcase(n)
@@ -282,10 +287,12 @@ def train():
             else:
                 cmnn += 1
                 mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*Mnet(Mnet.xp.array([G]).astype('f'))[0].data
-                if post[int(Mnet.xp.argmax(mx))] == []:
-                    zero += 1
-                    rnd = Mnet.xp.random.uniform(0,1,n*n)
-                    mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*rnd
+                # if post[int(Mnet.xp.argmax(mx))] == []:
+                #     loss = F.mean_squared_error(Mnet.xp.amax(mx).astype('f'),Mnet.xp.array(-100).astype('f'))
+                #     Mnet.cleargrads()
+                #     loss.backward()
+                #     Mopt.update()
+                #     break
             
             inputs_li, inputs, lp = decide_message(n,mx,G,post,Mnet.xp)
             post, next_G, _ = calc_reward(n, inputs, solver, tmpdir, form)
@@ -302,7 +309,7 @@ def train():
             else:
                 reward = 1-(1/step)
 
-            if total_step > start_training:
+            if step > start_training:
                 memory.add([G,inputs[0]*n+inputs[1],reward,next_G])
 
             G = next_G
@@ -312,13 +319,19 @@ def train():
 
                 minibatch = memory.sample(pool_size)
                 for i, [G_b,inputs_b,reward_b,next_G_b] in enumerate(minibatch):
-                    output = Mnet(Mnet.xp.array([G_b]).astype('f'))[0][inputs_b].data
-                    if not (next_G_b[n*n:n*n*2] == -1).all():
-                        target = reward_b + GAMMA*Mnet.xp.amax(target_Mnet(Mnet.xp.array([next_G_b]).astype('f'))[0].data)
+                    outputs = Mnet(Mnet.xp.array([G_b]).astype('f'))[0].data
+                    targets = outputs.copy()
+                    next_outputs = target_Mnet(Mnet.xp.array([next_G_b]).astype('f'))[0].data
+                    now_initial_post = G_b[n*n:n*n*2]
+                    targets[Mnet.xp.where(now_initial_post == -1)[0]] = -1
+                    next_initial_post = (next_G_b[n*n:n*n*2] != -1)
+                    if next_initial_post.any():
+                        max_q = Mnet.xp.amax(next_outputs[Mnet.xp.where(next_initial_post)[0]])
+                        target = reward_b + GAMMA*max_q
                     else:
                         target = Mnet.xp.array(reward_b).astype('f')
-
-                    loss = F.mean_squared_error(target,output)
+                    targets[inputs_b] = target
+                    loss = F.mean_squared_error(targets,outputs)
                     Mnet.cleargrads()
                     loss.backward()
                     Mopt.update()
@@ -330,7 +343,7 @@ def train():
         plt.plot(memo_x, memo_y)
         plt.savefig(os.path.join(savedir, 'graph.png'))
 
-        print(epsilon, np.mean(memo_y), cmnn, zero)
+        print(epsilon, np.mean(memo_y), cmnn)
  
     G = gen_worstcase(n)
     G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, Mnet.xp)
@@ -339,7 +352,7 @@ def train():
     while check:
         step += 1
         mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*Mnet(Mnet.xp.array([G]).astype('f'))[0].data
-        if (mx == 0).all():
+        if post[int(Mnet.xp.argmax(mx))] == []:
             rnd = Mnet.xp.random.uniform(0,1,n*n)
             mx = Mnet.xp.where(G[n*n:n*n*2] > -1,1,0)*rnd
         
@@ -352,76 +365,6 @@ def train():
             if po != []:
                 check = True
                 break
-
-        # G = gen_worstcase(n)
-        # G,post,inputs_li,lp = gen_initial_graph_state(G, n, x, m, net.xp)
-        # G2,_ = gen_random_graph(n,p,m)
-        # message =  np.random.randint(0,m,n*n)
-        # for i in range(n*n,n*n*2):
-        #     if G[i-n*n] == -1:
-        #         G[i] = -1
-        #     else:
-        #         G[i] = message[i-n*n]
-        #         if post[i-n*n] == []:
-        #             post[i-n*n].append(message[i-n*n])
-        #         else:
-        #             post[i-n*n][0] = message[i-n*n]
-        # for i in range(n):
-        #     G[-i-1] = G2[-i-1]
-
-        # lp = Mnet.xp.zeros(step)
-        # reward = Mnet.xp.zeros(step)
-        # zero = 0
-        # for s in range(step):
-        #     x = Mnet(Mnet.xp.array([G]).astype('f'))[0]
-        #     inputs_li, inputs, tmp_lp = decide_message(n,x,G,post,Mnet.xp)
-        #     lp[s] = tmp_lp.data
-        #     post, G, tmp_r = calc_reward(n, inputs, solver, tmpdir, form)
-        #     reward[s] = tmp_r
-            # if tmp_r == 0:
-            #     zero += 1
-
-            # check = False
-            # for po in post:
-            #     if po != []:
-            #         check = True
-            #         break
-
-        # if no_replay:
-        #     loss = -r * F.sum(lp)
-        #     print(loss)
-            
-        #     Mnet.cleargrads()
-        #     loss.backward()
-        #     Mopt.update()
-
-        # f = False
-        # for ib in inputs_bests:
-        #     if (ib == inputs_li).all():
-        #         f = True
-        # if not f:
-        #     r_bests.append(r)
-        #     inputs_bests.append(inputs_li)
-        
-        # while len(r_bests) > pool_size:
-        #     mi = 0
-        #     for j in range(len(r_bests)):
-        #         if r_bests[j] < r_bests[mi]:
-        #             mi = j
-        #     r_bests.pop(mi)
-        #     edges_bests.pop(mi)
-        #     z_bests.pop(mi)
-
-        # if from_restart >= start_training:
-        #     ind = np.random.randint(len(r_bests))
-        #     x = net(z_bests[ind])[0]
-        #     lp = calc_lp(n, x, edges_bests[ind], net.xp, form)
-
-        #     loss = - r_bests[ind] * lp
-
-        #     net.cleargrads()
-        #     loss.backward()
-        #     opt.update()
 
 if __name__ == '__main__':
     train()

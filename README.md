@@ -24,6 +24,9 @@ gpuの設定
 - https://www.kkaneko.jp/tools/win/chainer.html
 - yamlファイルのgpuを0に変更
 
+グラフの特徴量抽出(graph2vec)
+- karateclub(https://github.com/benedekrozemberczki/karateclub)
+
 ファイルの変更
 - util.py 63line　-> conf = yaml.safe_load(f)
 - yamlファイル全般　-> solverとdirnameを絶対パスに変更 -> 相対パスでもOK(原因不明)
