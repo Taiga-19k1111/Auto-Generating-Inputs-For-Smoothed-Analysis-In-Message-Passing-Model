@@ -10,11 +10,10 @@ from . import multiarray
 from .multiarray import (
     _fastCopyAndTranspose as fastCopyAndTranspose, ALLOW_THREADS,
     BUFSIZE, CLIP, MAXDIMS, MAY_SHARE_BOUNDS, MAY_SHARE_EXACT, RAISE,
-    WRAP, arange, array, asarray, asanyarray, ascontiguousarray,
-    asfortranarray, broadcast, can_cast, compare_chararrays,
+    WRAP, arange, array, broadcast, can_cast, compare_chararrays,
     concatenate, copyto, dot, dtype, empty,
-    empty_like, flatiter, frombuffer, from_dlpack, fromfile, fromiter,
-    fromstring, inner, lexsort, matmul, may_share_memory,
+    empty_like, flatiter, frombuffer, fromfile, fromiter, fromstring,
+    inner, lexsort, matmul, may_share_memory,
     min_scalar_type, ndarray, nditer, nested_iters, promote_types,
     putmask, result_type, set_numeric_ops, shares_memory, vdot, where,
     zeros, normalize_axis_index)
@@ -22,11 +21,12 @@ from .multiarray import (
 from . import overrides
 from . import umath
 from . import shape_base
-from .overrides import set_array_function_like_doc, set_module
+from .overrides import set_module
 from .umath import (multiply, invert, sin, PINF, NAN)
 from . import numerictypes
 from .numerictypes import longlong, intc, int_, float_, complex_, bool_
 from ._exceptions import TooHardError, AxisError
+from ._asarray import asarray, asanyarray
 from ._ufunc_config import errstate
 
 bitwise_not = invert
@@ -39,9 +39,8 @@ array_function_dispatch = functools.partial(
 
 __all__ = [
     'newaxis', 'ndarray', 'flatiter', 'nditer', 'nested_iters', 'ufunc',
-    'arange', 'array', 'asarray', 'asanyarray', 'ascontiguousarray',
-    'asfortranarray', 'zeros', 'count_nonzero', 'empty', 'broadcast', 'dtype',
-    'fromstring', 'fromfile', 'frombuffer', 'from_dlpack', 'where',
+    'arange', 'array', 'zeros', 'count_nonzero', 'empty', 'broadcast', 'dtype',
+    'fromstring', 'fromfile', 'frombuffer', 'where',
     'argwhere', 'copyto', 'concatenate', 'fastCopyAndTranspose', 'lexsort',
     'set_numeric_ops', 'can_cast', 'promote_types', 'min_scalar_type',
     'result_type', 'isfortran', 'empty_like', 'zeros_like', 'ones_like',
@@ -96,7 +95,7 @@ def zeros_like(a, dtype=None, order='K', subok=True, shape=None):
         .. versionadded:: 1.6.0
     subok : bool, optional.
         If True, then the newly created array will use the sub-class
-        type of `a`, otherwise it will be a base-class array. Defaults
+        type of 'a', otherwise it will be a base-class array. Defaults
         to True.
     shape : int or sequence of ints, optional.
         Overrides the shape of the result. If order='K' and the number of
@@ -136,19 +135,14 @@ def zeros_like(a, dtype=None, order='K', subok=True, shape=None):
 
     """
     res = empty_like(a, dtype=dtype, order=order, subok=subok, shape=shape)
-    # needed instead of a 0 to get same result as zeros for string dtypes
+    # needed instead of a 0 to get same result as zeros for for string dtypes
     z = zeros(1, dtype=res.dtype)
     multiarray.copyto(res, z, casting='unsafe')
     return res
 
 
-def _ones_dispatcher(shape, dtype=None, order=None, *, like=None):
-    return(like,)
-
-
-@set_array_function_like_doc
 @set_module('numpy')
-def ones(shape, dtype=None, order='C', *, like=None):
+def ones(shape, dtype=None, order='C'):
     """
     Return a new array of given shape and type, filled with ones.
 
@@ -163,9 +157,6 @@ def ones(shape, dtype=None, order='C', *, like=None):
         Whether to store multi-dimensional data in row-major
         (C-style) or column-major (Fortran-style) order in
         memory.
-    ${ARRAY_FUNCTION_LIKE}
-
-        .. versionadded:: 1.20.0
 
     Returns
     -------
@@ -198,17 +189,9 @@ def ones(shape, dtype=None, order='C', *, like=None):
            [1.,  1.]])
 
     """
-    if like is not None:
-        return _ones_with_like(shape, dtype=dtype, order=order, like=like)
-
     a = empty(shape, dtype, order)
     multiarray.copyto(a, 1, casting='unsafe')
     return a
-
-
-_ones_with_like = array_function_dispatch(
-    _ones_dispatcher
-)(ones)
 
 
 def _ones_like_dispatcher(a, dtype=None, order=None, subok=None, shape=None):
@@ -238,7 +221,7 @@ def ones_like(a, dtype=None, order='K', subok=True, shape=None):
         .. versionadded:: 1.6.0
     subok : bool, optional.
         If True, then the newly created array will use the sub-class
-        type of `a`, otherwise it will be a base-class array. Defaults
+        type of 'a', otherwise it will be a base-class array. Defaults
         to True.
     shape : int or sequence of ints, optional.
         Overrides the shape of the result. If order='K' and the number of
@@ -282,13 +265,8 @@ def ones_like(a, dtype=None, order='K', subok=True, shape=None):
     return res
 
 
-def _full_dispatcher(shape, fill_value, dtype=None, order=None, *, like=None):
-    return(like,)
-
-
-@set_array_function_like_doc
 @set_module('numpy')
-def full(shape, fill_value, dtype=None, order='C', *, like=None):
+def full(shape, fill_value, dtype=None, order='C'):
     """
     Return a new array of given shape and type, filled with `fill_value`.
 
@@ -300,13 +278,10 @@ def full(shape, fill_value, dtype=None, order='C', *, like=None):
         Fill value.
     dtype : data-type, optional
         The desired data-type for the array  The default, None, means
-         ``np.array(fill_value).dtype``.
+         `np.array(fill_value).dtype`.
     order : {'C', 'F'}, optional
         Whether to store multidimensional data in C- or Fortran-contiguous
         (row- or column-wise) order in memory.
-    ${ARRAY_FUNCTION_LIKE}
-
-        .. versionadded:: 1.20.0
 
     Returns
     -------
@@ -334,20 +309,11 @@ def full(shape, fill_value, dtype=None, order='C', *, like=None):
            [1, 2]])
 
     """
-    if like is not None:
-        return _full_with_like(shape, fill_value, dtype=dtype, order=order, like=like)
-
     if dtype is None:
-        fill_value = asarray(fill_value)
-        dtype = fill_value.dtype
+        dtype = array(fill_value).dtype
     a = empty(shape, dtype, order)
     multiarray.copyto(a, fill_value, casting='unsafe')
     return a
-
-
-_full_with_like = array_function_dispatch(
-    _full_dispatcher
-)(full)
 
 
 def _full_like_dispatcher(a, fill_value, dtype=None, order=None, subok=None, shape=None):
@@ -364,7 +330,7 @@ def full_like(a, fill_value, dtype=None, order='K', subok=True, shape=None):
     a : array_like
         The shape and data-type of `a` define these same attributes of
         the returned array.
-    fill_value : array_like
+    fill_value : scalar
         Fill value.
     dtype : data-type, optional
         Overrides the data type of the result.
@@ -375,7 +341,7 @@ def full_like(a, fill_value, dtype=None, order='K', subok=True, shape=None):
         as possible.
     subok : bool, optional.
         If True, then the newly created array will use the sub-class
-        type of `a`, otherwise it will be a base-class array. Defaults
+        type of 'a', otherwise it will be a base-class array. Defaults
         to True.
     shape : int or sequence of ints, optional.
         Overrides the shape of the result. If order='K' and the number of
@@ -410,14 +376,8 @@ def full_like(a, fill_value, dtype=None, order='K', subok=True, shape=None):
 
     >>> y = np.arange(6, dtype=np.double)
     >>> np.full_like(y, 0.1)
-    array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+    array([0.1,  0.1,  0.1,  0.1,  0.1,  0.1])
 
-    >>> y = np.zeros([2, 2, 3], dtype=int)
-    >>> np.full_like(y, [0, 0, 255])
-    array([[[  0,   0, 255],
-            [  0,   0, 255]],
-           [[  0,   0, 255],
-            [  0,   0, 255]]])
     """
     res = empty_like(a, dtype=dtype, order=order, subok=subok, shape=shape)
     multiarray.copyto(res, fill_value, casting='unsafe')
@@ -633,7 +593,7 @@ def flatnonzero(a):
     """
     Return indices that are non-zero in the flattened version of a.
 
-    This is equivalent to ``np.nonzero(np.ravel(a))[0]``.
+    This is equivalent to np.nonzero(np.ravel(a))[0].
 
     Parameters
     ----------
@@ -643,7 +603,7 @@ def flatnonzero(a):
     Returns
     -------
     res : ndarray
-        Output array, containing the indices of the elements of ``a.ravel()``
+        Output array, containing the indices of the elements of `a.ravel()`
         that are non-zero.
 
     See Also
@@ -669,22 +629,33 @@ def flatnonzero(a):
     return np.nonzero(np.ravel(a))[0]
 
 
+_mode_from_name_dict = {'v': 0,
+                        's': 1,
+                        'f': 2}
+
+
+def _mode_from_name(mode):
+    if isinstance(mode, str):
+        return _mode_from_name_dict[mode.lower()[0]]
+    return mode
+
+
 def _correlate_dispatcher(a, v, mode=None):
     return (a, v)
 
 
 @array_function_dispatch(_correlate_dispatcher)
 def correlate(a, v, mode='valid'):
-    r"""
+    """
     Cross-correlation of two 1-dimensional sequences.
 
     This function computes the correlation as generally defined in signal
-    processing texts:
+    processing texts::
 
-    .. math:: c_k = \sum_n a_{n+k} \cdot \overline{v_n}
+        c_{av}[k] = sum_n a[n+k] * conj(v[n])
 
-    with a and v sequences being zero-padded where necessary and
-    :math:`\overline x` denoting complex conjugation.
+    with a and v sequences being zero-padded where necessary and conj being
+    the conjugate.
 
     Parameters
     ----------
@@ -706,21 +677,15 @@ def correlate(a, v, mode='valid'):
     --------
     convolve : Discrete, linear convolution of two one-dimensional sequences.
     multiarray.correlate : Old, no conjugate, version of correlate.
-    scipy.signal.correlate : uses FFT which has superior performance on large arrays. 
 
     Notes
     -----
     The definition of correlation above is not unique and sometimes correlation
-    may be defined differently. Another common definition is:
+    may be defined differently. Another common definition is::
 
-    .. math:: c'_k = \sum_n a_{n} \cdot \overline{v_{n+k}}
+        c'_{av}[k] = sum_n a[n] conj(v[n+k])
 
-    which is related to :math:`c_k` by :math:`c'_k = c_{-k}`.
-
-    `numpy.correlate` may perform slowly in large arrays (i.e. n = 1e5) because it does
-    not use the FFT to compute the convolution; in that case, `scipy.signal.correlate` might
-    be preferable.
-    
+    which is related to ``c_{av}[k]`` by ``c'_{av}[k] = c_{av}[-k]``.
 
     Examples
     --------
@@ -737,13 +702,14 @@ def correlate(a, v, mode='valid'):
     array([ 0.5-0.5j,  1.0+0.j ,  1.5-1.5j,  3.0-1.j ,  0.0+0.j ])
 
     Note that you get the time reversed, complex conjugated result
-    (:math:`\overline{c_{-k}}`) when the two input sequences a and v change 
-    places:
+    when the two input sequences change places, i.e.,
+    ``c_{va}[k] = c^{*}_{av}[-k]``:
 
     >>> np.correlate([0, 1, 0.5j], [1+1j, 2, 3-1j], 'full')
     array([ 0.0+0.j ,  3.0+1.j ,  1.5+1.5j,  1.0+0.j ,  0.5+0.5j])
 
     """
+    mode = _mode_from_name(mode)
     return multiarray.correlate2(a, v, mode)
 
 
@@ -804,7 +770,7 @@ def convolve(a, v, mode='full'):
     -----
     The discrete convolution operation is defined as
 
-    .. math:: (a * v)_n = \\sum_{m = -\\infty}^{\\infty} a_m v_{n - m}
+    .. math:: (a * v)[n] = \\sum_{m = -\\infty}^{\\infty} a[m] v[n - m]
 
     It can be shown that a convolution :math:`x(t) * y(t)` in time/space
     is equivalent to the multiplication :math:`X(f) Y(f)` in the Fourier
@@ -847,6 +813,7 @@ def convolve(a, v, mode='full'):
         raise ValueError('a cannot be empty')
     if len(v) == 0:
         raise ValueError('v cannot be empty')
+    mode = _mode_from_name(mode)
     return multiarray.correlate(a, v[::-1], mode)
 
 
@@ -1190,7 +1157,7 @@ def roll(a, shift, axis=None):
     >>> np.roll(x, -2)
     array([2, 3, 4, 5, 6, 7, 8, 9, 0, 1])
 
-    >>> x2 = np.reshape(x, (2, 5))
+    >>> x2 = np.reshape(x, (2,5))
     >>> x2
     array([[0, 1, 2, 3, 4],
            [5, 6, 7, 8, 9]])
@@ -1212,12 +1179,6 @@ def roll(a, shift, axis=None):
     >>> np.roll(x2, -1, axis=1)
     array([[1, 2, 3, 4, 0],
            [6, 7, 8, 9, 5]])
-    >>> np.roll(x2, (1, 1), axis=(1, 0))
-    array([[9, 5, 6, 7, 8],
-           [4, 0, 1, 2, 3]])
-    >>> np.roll(x2, (2, 1), axis=(1, 0))
-    array([[8, 9, 5, 6, 7],
-           [3, 4, 0, 1, 2]])
 
     """
     a = asanyarray(a)
@@ -1433,11 +1394,12 @@ def moveaxis(a, source, destination):
 
     See Also
     --------
-    transpose : Permute the dimensions of an array.
-    swapaxes : Interchange two axes of an array.
+    transpose: Permute the dimensions of an array.
+    swapaxes: Interchange two axes of an array.
 
     Examples
     --------
+
     >>> x = np.zeros((3, 4, 5))
     >>> np.moveaxis(x, 0, -1).shape
     (4, 5, 3)
@@ -1476,6 +1438,11 @@ def moveaxis(a, source, destination):
 
     result = transpose(order)
     return result
+
+
+# fix hack in scipy which imports this function
+def _move_axis_to_0(a, axis):
+    return moveaxis(a, axis, 0)
 
 
 def _cross_dispatcher(a, b, axisa=None, axisb=None, axisc=None, axis=None):
@@ -1567,7 +1534,7 @@ def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
     array(-3)
 
     Multiple vector cross-products. Note that the direction of the cross
-    product vector is defined by the *right-hand rule*.
+    product vector is defined by the `right-hand rule`.
 
     >>> x = np.array([[1,2,3], [4,5,6]])
     >>> y = np.array([[4,5,6], [1,2,3]])
@@ -1786,13 +1753,8 @@ def indices(dimensions, dtype=int, sparse=False):
     return res
 
 
-def _fromfunction_dispatcher(function, shape, *, dtype=None, like=None, **kwargs):
-    return (like,)
-
-
-@set_array_function_like_doc
 @set_module('numpy')
-def fromfunction(function, shape, *, dtype=float, like=None, **kwargs):
+def fromfunction(function, shape, *, dtype=float, **kwargs):
     """
     Construct an array by executing a function over each coordinate.
 
@@ -1813,9 +1775,6 @@ def fromfunction(function, shape, *, dtype=float, like=None, **kwargs):
     dtype : data-type, optional
         Data-type of the coordinate arrays passed to `function`.
         By default, `dtype` is float.
-    ${ARRAY_FUNCTION_LIKE}
-
-        .. versionadded:: 1.20.0
 
     Returns
     -------
@@ -1835,14 +1794,6 @@ def fromfunction(function, shape, *, dtype=float, like=None, **kwargs):
 
     Examples
     --------
-    >>> np.fromfunction(lambda i, j: i, (2, 2), dtype=float)
-    array([[0., 0.],
-           [1., 1.]])
-           
-    >>> np.fromfunction(lambda i, j: j, (2, 2), dtype=float)    
-    array([[0., 1.],
-           [0., 1.]])
-           
     >>> np.fromfunction(lambda i, j: i == j, (3, 3), dtype=int)
     array([[ True, False, False],
            [False,  True, False],
@@ -1854,16 +1805,8 @@ def fromfunction(function, shape, *, dtype=float, like=None, **kwargs):
            [2, 3, 4]])
 
     """
-    if like is not None:
-        return _fromfunction_with_like(function, shape, dtype=dtype, like=like, **kwargs)
-
     args = indices(shape, dtype=dtype)
     return function(*args, **kwargs)
-
-
-_fromfunction_with_like = array_function_dispatch(
-    _fromfunction_dispatcher
-)(fromfunction)
 
 
 def _frombuffer(buf, dtype, shape, order):
@@ -2138,13 +2081,8 @@ def _maketup(descr, val):
         return tuple(res)
 
 
-def _identity_dispatcher(n, dtype=None, *, like=None):
-    return (like,)
-
-
-@set_array_function_like_doc
 @set_module('numpy')
-def identity(n, dtype=None, *, like=None):
+def identity(n, dtype=None):
     """
     Return the identity array.
 
@@ -2157,9 +2095,6 @@ def identity(n, dtype=None, *, like=None):
         Number of rows (and columns) in `n` x `n` output.
     dtype : data-type, optional
         Data-type of the output.  Defaults to ``float``.
-    ${ARRAY_FUNCTION_LIKE}
-
-        .. versionadded:: 1.20.0
 
     Returns
     -------
@@ -2175,16 +2110,8 @@ def identity(n, dtype=None, *, like=None):
            [0.,  0.,  1.]])
 
     """
-    if like is not None:
-        return _identity_with_like(n, dtype=dtype, like=like)
-
     from numpy import eye
-    return eye(n, dtype=dtype, like=like)
-
-
-_identity_with_like = array_function_dispatch(
-    _identity_dispatcher
-)(identity)
+    return eye(n, dtype=dtype)
 
 
 def _allclose_dispatcher(a, b, rtol=None, atol=None, equal_nan=None):
@@ -2245,9 +2172,6 @@ def allclose(a, b, rtol=1.e-5, atol=1.e-8, equal_nan=False):
     ``allclose(a, b)`` to evaluate to True.  The same is true for
     `equal` but not `array_equal`.
 
-    `allclose` is not defined for non-numeric data types.
-    `bool` is considered a numeric data-type for this purpose.
-
     Examples
     --------
     >>> np.allclose([1e10,1e-7], [1.00001e10,1e-8])
@@ -2306,7 +2230,6 @@ def isclose(a, b, rtol=1.e-5, atol=1.e-8, equal_nan=False):
     See Also
     --------
     allclose
-    math.isclose
 
     Notes
     -----
@@ -2326,9 +2249,6 @@ def isclose(a, b, rtol=1.e-5, atol=1.e-8, equal_nan=False):
     are significantly smaller than one, it can result in false positives.
     `atol` should be carefully selected for the use case at hand. A zero value
     for `atol` will result in `False` if either `a` or `b` is zero.
-
-    `isclose` is not defined for non-numeric data types.
-    `bool` is considered a numeric data-type for this purpose.
 
     Examples
     --------
@@ -2361,13 +2281,8 @@ def isclose(a, b, rtol=1.e-5, atol=1.e-8, equal_nan=False):
     # Make sure y is an inexact type to avoid bad behavior on abs(MIN_INT).
     # This will cause casting of x later. Also, make sure to allow subclasses
     # (e.g., for numpy.ma).
-    # NOTE: We explicitly allow timedelta, which used to work. This could
-    #       possibly be deprecated. See also gh-18286.
-    #       timedelta works if `atol` is an integer or also a timedelta.
-    #       Although, the default tolerances are unlikely to be useful
-    if y.dtype.kind != "m":
-        dt = multiarray.result_type(y, 1.)
-        y = asanyarray(y, dtype=dt)
+    dt = multiarray.result_type(y, 1.)
+    y = array(y, dtype=dt, copy=False, subok=True)
 
     xfin = isfinite(x)
     yfin = isfinite(y)

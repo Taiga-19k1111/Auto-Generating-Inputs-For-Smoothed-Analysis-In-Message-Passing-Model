@@ -47,7 +47,7 @@ def output_distribution_graph(filename, n, x):
             for j in range(n):
                 if j != 0:
                     f.write(' ')
-                f.write('{:.3f}'.format(P[i, j]))
+                f.write('{:.10f}'.format(P[i, j]))
             f.write('\n')
 
 def output_distribution_sequence(filename, n, x):
@@ -72,22 +72,22 @@ def output_distribution_sequence(filename, n, x):
 def update_state(inputs,output,n):
     post = inputs[3]
     G = inputs[2]
-    r = 1e-6
     count = 0
+    r = 0
     if output[0] != '':
         send,memory = list(map(int,output.pop(0).split()))
         for o in output:
             receive,message = list(map(int,o.split()))
             post[send*n+receive].append(message)
             # r += message
-            count += 1
+            # count += 1
             # r = r+1
         # r = 1/(G[-n+send]-memory)
         # r = count/(G[-n+send]-memory)
-        # r = memory
+        r = memory
         # r = r/count
         # r = (G[-n+send]-memory)/count
-        r = (G[-n+send]-memory)
+        # r = (G[-n+send]-memory)
         G[-n+send] = memory
 
     for i in range(n*n):

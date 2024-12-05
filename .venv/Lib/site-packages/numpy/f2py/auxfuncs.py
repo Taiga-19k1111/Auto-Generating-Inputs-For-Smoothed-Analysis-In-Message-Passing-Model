@@ -257,7 +257,6 @@ def ismodule(rout):
 def isfunction(rout):
     return 'block' in rout and 'function' == rout['block']
 
-
 def isfunction_wrap(rout):
     if isintent_c(rout):
         return 0
@@ -283,10 +282,6 @@ def hasassumedshape(rout):
                 rout['hasassumedshape'] = True
                 return True
     return False
-
-
-def requiresf90wrapper(rout):
-    return ismoduleroutine(rout) or hasassumedshape(rout)
 
 
 def isroutine(rout):
@@ -347,9 +342,9 @@ def iscomplexfunction_warn(rout):
     **************************************************************
         Warning: code with a function returning complex value
         may not work correctly with your Fortran compiler.
-        When using GNU gcc/g77 compilers, codes should work
-        correctly for callbacks with:
-        f2py -c -DF2PY_CB_RETURNCOMPLEX
+        Run the following test before using it in your applications:
+        $(f2py install dir)/test-site/{b/runme_scalar,e/runme}
+        When using GNU gcc/g77 compilers, codes should work correctly.
     **************************************************************\n""")
         return 1
     return 0

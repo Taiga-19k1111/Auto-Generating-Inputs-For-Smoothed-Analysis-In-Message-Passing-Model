@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 from gen_SSSP_worstcase import gen_worstcase
 
@@ -34,13 +35,15 @@ def update_state(n, G, dist, post):
                 post[receive*n+i].append(dist[receive]+G[receive][i])
     return post, dist
 
-N = 25
+N = 16
 G = gen_worstcase(N)
 post, dist = gen_initial_graph_state(G,N)
 check = True
 count = 0
 while check:
     post, dist = update_state(N, G, dist, post)
+    # print(post)
+    # time.sleep(1)
     count += 1
     check = False
     for p in post:

@@ -233,11 +233,7 @@ def hermline(off, scl):
 
     See Also
     --------
-    numpy.polynomial.polynomial.polyline
-    numpy.polynomial.chebyshev.chebline
-    numpy.polynomial.legendre.legline
-    numpy.polynomial.laguerre.lagline
-    numpy.polynomial.hermite_e.hermeline
+    polyline, chebline
 
     Examples
     --------
@@ -290,11 +286,7 @@ def hermfromroots(roots):
 
     See Also
     --------
-    numpy.polynomial.polynomial.polyfromroots
-    numpy.polynomial.legendre.legfromroots
-    numpy.polynomial.laguerre.lagfromroots
-    numpy.polynomial.chebyshev.chebfromroots
-    numpy.polynomial.hermite_e.hermefromroots
+    polyfromroots, legfromroots, lagfromroots, chebfromroots, hermefromroots
 
     Examples
     --------
@@ -419,7 +411,7 @@ def hermmulx(c):
 
     .. math::
 
-        xP_i(x) = (P_{i + 1}(x)/2 + i*P_{i - 1}(x))
+    xP_i(x) = (P_{i + 1}(x)/2 + i*P_{i - 1}(x))
 
     Examples
     --------
@@ -827,7 +819,7 @@ def hermval(x, c, tensor=True):
         If `x` is a list or tuple, it is converted to an ndarray, otherwise
         it is left unchanged and treated as a scalar. In either case, `x`
         or its elements must support addition and multiplication with
-        themselves and with the elements of `c`.
+        with themselves and with the elements of `c`.
     c : array_like
         Array of coefficients ordered so that the coefficients for terms of
         degree n are contained in c[n]. If `c` is multidimensional the
@@ -1310,11 +1302,10 @@ def hermfit(x, y, deg, rcond=None, full=False, w=None):
         default) just the coefficients are returned, when True diagnostic
         information from the singular value decomposition is also returned.
     w : array_like, shape (`M`,), optional
-        Weights. If not None, the weight ``w[i]`` applies to the unsquared
-        residual ``y[i] - y_hat[i]`` at ``x[i]``. Ideally the weights are
-        chosen so that the errors of the products ``w[i]*y[i]`` all have the
-        same variance.  When using inverse-variance weighting, use
-        ``w[i] = 1/sigma(y[i])``.  The default value is None.
+        Weights. If not None, the contribution of each point
+        ``(x[i],y[i])`` to the fit is weighted by `w[i]`. Ideally the
+        weights are chosen so that the errors of the products ``w[i]*y[i]``
+        all have the same variance.  The default value is None.
 
     Returns
     -------
@@ -1324,20 +1315,20 @@ def hermfit(x, y, deg, rcond=None, full=False, w=None):
         `k`.
 
     [residuals, rank, singular_values, rcond] : list
-        These values are only returned if ``full == True``
+        These values are only returned if `full` = True
 
-        - residuals -- sum of squared residuals of the least squares fit
-        - rank -- the numerical rank of the scaled Vandermonde matrix
-        - singular_values -- singular values of the scaled Vandermonde matrix
-        - rcond -- value of `rcond`.
+        resid -- sum of squared residuals of the least squares fit
+        rank -- the numerical rank of the scaled Vandermonde matrix
+        sv -- singular values of the scaled Vandermonde matrix
+        rcond -- value of `rcond`.
 
-        For more details, see `numpy.linalg.lstsq`.
+        For more details, see `linalg.lstsq`.
 
     Warns
     -----
     RankWarning
         The rank of the coefficient matrix in the least-squares fit is
-        deficient. The warning is only raised if ``full == False``.  The
+        deficient. The warning is only raised if `full` = False.  The
         warnings can be turned off by
 
         >>> import warnings
@@ -1345,15 +1336,11 @@ def hermfit(x, y, deg, rcond=None, full=False, w=None):
 
     See Also
     --------
-    numpy.polynomial.chebyshev.chebfit
-    numpy.polynomial.legendre.legfit
-    numpy.polynomial.laguerre.lagfit
-    numpy.polynomial.polynomial.polyfit
-    numpy.polynomial.hermite_e.hermefit
+    chebfit, legfit, lagfit, polyfit, hermefit
     hermval : Evaluates a Hermite series.
     hermvander : Vandermonde matrix of Hermite series.
     hermweight : Hermite weight function
-    numpy.linalg.lstsq : Computes a least-squares fit from the matrix.
+    linalg.lstsq : Computes a least-squares fit from the matrix.
     scipy.interpolate.UnivariateSpline : Computes spline fits.
 
     Notes
@@ -1470,11 +1457,7 @@ def hermroots(c):
 
     See Also
     --------
-    numpy.polynomial.polynomial.polyroots
-    numpy.polynomial.legendre.legroots
-    numpy.polynomial.laguerre.lagroots
-    numpy.polynomial.chebyshev.chebroots
-    numpy.polynomial.hermite_e.hermeroots
+    polyroots, legroots, lagroots, chebroots, hermeroots
 
     Notes
     -----
@@ -1692,6 +1675,7 @@ class Hermite(ABCPolyBase):
     _fromroots = staticmethod(hermfromroots)
 
     # Virtual properties
+    nickname = 'herm'
     domain = np.array(hermdomain)
     window = np.array(hermdomain)
     basis_name = 'H'

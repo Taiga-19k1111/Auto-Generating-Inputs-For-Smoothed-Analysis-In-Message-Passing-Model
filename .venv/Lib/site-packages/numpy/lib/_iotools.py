@@ -5,7 +5,7 @@ __docformat__ = "restructuredtext en"
 
 import numpy as np
 import numpy.core.numeric as nx
-from numpy.compat import asbytes, asunicode
+from numpy.compat import asbytes, asunicode, bytes
 
 
 def _decode_line(line, encoding=None):
@@ -18,18 +18,18 @@ def _decode_line(line, encoding=None):
     ----------
     line : str or bytes
          Line to be decoded.
-    encoding : str
-         Encoding used to decode `line`.
 
     Returns
     -------
-    decoded_line : str
+    decoded_line : unicode
+         Unicode in Python 2, a str (unicode) in Python 3.
 
     """
     if type(line) is bytes:
         if encoding is None:
-            encoding = "latin1"
-        line = line.decode(encoding)
+            line = line.decode('latin1')
+        else:
+            line = line.decode(encoding)
 
     return line
 
