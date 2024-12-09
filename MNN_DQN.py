@@ -308,10 +308,9 @@ def train():
                     break
 
             if check:
-                reward = r
-            else:
                 reward = 0
-            # reward = 1
+            else:
+                reward = 1-1/step
 
             if step > start_training:
                 memory.add([G,inputs[0]*n+inputs[1],reward,next_G])

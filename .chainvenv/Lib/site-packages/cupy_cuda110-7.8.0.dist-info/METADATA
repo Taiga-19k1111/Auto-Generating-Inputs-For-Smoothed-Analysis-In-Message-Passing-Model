@@ -1,0 +1,83 @@
+Metadata-Version: 2.1
+Name: cupy-cuda110
+Version: 7.8.0
+Summary: CuPy: NumPy-like API accelerated with CUDA
+Home-page: https://cupy.dev/
+Author: Seiya Tokui
+Author-email: tokui@preferred.jp
+License: MIT License
+Project-URL: Bug Tracker, https://github.com/cupy/cupy/issues
+Project-URL: Documentation, https://docs.cupy.dev/
+Project-URL: Source Code, https://github.com/cupy/cupy
+Platform: UNKNOWN
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Science/Research
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.5
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Cython
+Classifier: Topic :: Software Development
+Classifier: Topic :: Scientific/Engineering
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: MacOS
+Requires-Python: >=3.5.0
+Requires-Dist: numpy (>=1.9.0)
+Requires-Dist: six (>=1.9.0)
+Requires-Dist: fastrlock (>=0.3)
+Provides-Extra: appveyor
+Requires-Dist: pytest (<4.2.0) ; extra == 'appveyor'
+Requires-Dist: attrs (<19.2.0) ; extra == 'appveyor'
+Requires-Dist: mock ; extra == 'appveyor'
+Provides-Extra: docs
+Requires-Dist: sphinx (==3.0.4) ; extra == 'docs'
+Requires-Dist: sphinx-rtd-theme ; extra == 'docs'
+Provides-Extra: doctest
+Requires-Dist: matplotlib ; extra == 'doctest'
+Provides-Extra: jenkins
+Requires-Dist: pytest (<4.2.0) ; extra == 'jenkins'
+Requires-Dist: attrs (<19.2.0) ; extra == 'jenkins'
+Requires-Dist: mock ; extra == 'jenkins'
+Requires-Dist: pytest-timeout ; extra == 'jenkins'
+Requires-Dist: pytest-cov ; extra == 'jenkins'
+Requires-Dist: coveralls ; extra == 'jenkins'
+Requires-Dist: codecov ; extra == 'jenkins'
+Provides-Extra: setup
+Requires-Dist: fastrlock (>=0.3) ; extra == 'setup'
+Provides-Extra: stylecheck
+Requires-Dist: autopep8 (==1.4.4) ; extra == 'stylecheck'
+Requires-Dist: flake8 (==3.7.9) ; extra == 'stylecheck'
+Requires-Dist: pbr (==4.0.4) ; extra == 'stylecheck'
+Requires-Dist: pycodestyle (==2.5.0) ; extra == 'stylecheck'
+Provides-Extra: test
+Requires-Dist: pytest (<4.2.0) ; extra == 'test'
+Requires-Dist: attrs (<19.2.0) ; extra == 'test'
+Requires-Dist: mock ; extra == 'test'
+Provides-Extra: travis
+Requires-Dist: autopep8 (==1.4.4) ; extra == 'travis'
+Requires-Dist: flake8 (==3.7.9) ; extra == 'travis'
+Requires-Dist: pbr (==4.0.4) ; extra == 'travis'
+Requires-Dist: pycodestyle (==2.5.0) ; extra == 'travis'
+Requires-Dist: sphinx (==3.0.4) ; extra == 'travis'
+Requires-Dist: sphinx-rtd-theme ; extra == 'travis'
+
+.. image:: https://raw.githubusercontent.com/cupy/cupy/master/docs/image/cupy_logo_1000px.png
+   :width: 400
+
+CuPy : NumPy-like API accelerated with CUDA
+===========================================
+
+`CuPy <https://cupy.chainer.org/>`_ is an implementation of NumPy-compatible multi-dimensional array on CUDA.
+
+This is a CuPy wheel (precompiled binary) package for CUDA 11.0.
+You need to install `CUDA Toolkit 11.0 <https://developer.nvidia.com/cuda-toolkit-archive>`_ to use these packages.
+
+If you have another version of CUDA, please see `Installation Guide <https://docs-cupy.chainer.org/en/latest/install.html>`_ for instructions.
+If you want to build CuPy from `source distribution <https://pypi.python.org/pypi/cupy>`_, use ``pip install cupy`` instead.
+
+
