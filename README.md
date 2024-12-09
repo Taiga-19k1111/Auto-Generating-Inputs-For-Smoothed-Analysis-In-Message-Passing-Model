@@ -11,11 +11,16 @@ C++の環境構築
 - https://www.javadrive.jp/cstart/install/index6.html
 - https://www.binarydevelop.com/article/libgcc_s_dw21dll-36074
 
-pip install
+pip install(chainer)
 - numpy 1.23.0
 - chainer 7.8.1
 - matplotlib 3.7.5
 - pyyaml 6.0.2
+
+pip install(tensorflow)
+ - numpy 1.19.5
+ - tensorflow 2.4.0
+ - matplotlib 3.4.0
 
 make
 - https://qiita.com/ryuso/items/cf0c1d83544103cacf05
@@ -52,6 +57,11 @@ savedir, 繰り返し数, 経過時間(秒), ハードネス, 辺数, エント�
      → 次のグラフ状態をMNNに入力
      → 終了条件を満たすまで繰り返す
      → メッセージの送信回数を報酬としてHiSamplerを強化
+  - 最悪時グラフの初期状態から開始し終了状態になるまでメッセージを送信 ← 1エピソードとし、DQNで学習(tensorflow, AlphaZero)
+    → n=16, pool_size=10, start_training=5, epsilon=E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*total_step){E_START=1.0, E_STOP=0, E_DECAY_RATE=0.00001}, GAMMA=0.99
+    → 中間層...ユニット数16の全結合層×3(activation=relu)
+    → 1000~3000エピソードにかけてメッセージ送信数が上昇(平均は170~200まで上昇)
+    → 約6000エピソード内でのmax...約350(n=16の最悪時...434)
 - 分散アルゴリズムでの検証(平滑時)
 
 # HiSampler: Learning to Sample Hard Instances for Graph Algorithms
