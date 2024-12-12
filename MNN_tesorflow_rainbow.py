@@ -53,10 +53,15 @@ class RainbowAgent:
         self.steps = 0
 
     def learn(self, n_episodes):
+        memo_x = []
+        memo_y = []
+        memo_ave = []
+        ave = 0
+        total_max = 0
         for ep in range(1,n_episodes+1):
             G = gen_worstcase(self.n)
             G,post = gen_initial_graph_state(G, self.n)
-            frame = G[self.n*self.n:self.n*self.n*2]
+            frame = G[self.n*self.n:self.n*self.n*2].reshape((self.n,self.n))
             frames = collections.deque([frame]*self.n_frames, maxlen=self.n_frames)
             edges = []
             check = True
@@ -65,53 +70,60 @@ class RainbowAgent:
                 num_messages += 1
                 self.steps += 1
                 state = np.stack(frames, axis=2)[np.newaxis, ...]
-                action = self.qnet.sample_action(state)
-                if post[action] != []:
-                    inputs = [action//self.n, action%self.n, G,post]
-                    post, next_G, r = calc_reward(n, inputs, solver, tmpdir, form)
-                    next_frame = next_G[self.n**2:(self.n**2)*2]
-                    frames.append(next_frame)
-                    next_state = np.stack(frames, axis=2)[np.newaxis, ...]
-                    edges.append(inputs[0:2])
-                    G = next_G
+                mask_post = np.where(G[self.n**2:(self.n**2)*2] != -1)[0]
+                mask_post = mask_post.reshape(1,mask_post.size,1)
+                action = self.qnet.sample_action(state, mask_post)
+                post[action].pop(0)
+                inputs = [action//self.n, action%self.n, G, post]
+                post, next_G, r = calc_reward(n, inputs, solver, tmpdir, form)
+                next_frame = next_G[self.n**2:(self.n**2)*2].reshape((self.n,self.n))
+                frames.append(next_frame)
+                next_state = np.stack(frames, axis=2)[np.newaxis, ...]
+                edges.append(inputs[0:2])
+                G = next_G
+                next_mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, False, True).reshape((1,self.n**2,1))
 
-                    check = False
-                    for po in post:
-                        if po != []:
-                            check = True
-                            break
+                check = False
+                for po in post:
+                    if po != []:
+                        check = True
+                        break
 
-                    if check:
-                        reward = 0
-                        transition = (state, action, reward, next_state, False)
-                    else:
-                        reward = 1-1/num_messages
-                        transition = (state, action, reward, next_state, True)
+                if check:
+                    reward = 0
+                    transition = (state, action, reward, next_state, False, next_mask_post)
                 else:
-                    next_frame = np.zeros(self.n**2)
-                    frames.append(next_frame)
-                    next_state = np.stack(frames, axis=2)[np.newaxis, ...]
-                    edges.append([-1,-1])
-                    reward = -1
-                    transition = (state, action, reward, next_state, True)
+                    reward = 1-1/num_messages
+                    transition = (state, action, reward, next_state, True, next_mask_post)
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 50000:
+                if len(self.replay_buffer) >= 100:
                     if self.steps%self.update_period == 0:
-                        loss = self.update_categorical_network()
+                        loss = self.update_network()
                     
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
-            output_graph(os.path.join(savedir, 'output_{}.txt'.format(ep)), n, edges, 0)
+            memo_x.append(ep)
+            memo_y.append(step)
+            ave = ((ep-1)*ave+step)/ep
+            memo_ave.append(ave)
             plt.clf()
-            plt.savefig(os.path.join(savedir, 'graph.png'))
+            plt.plot(memo_x, memo_y)
+            plt.savefig(os.path.join(savedir, 'message_num.png'))
+            plt.clf()
+            plt.plot(memo_x, memo_ave)
+            plt.savefig(os.path.join(savedir, 'ave_message_num.png'))
+
+            if step > total_max:
+                total_max = step
+                output_graph(os.path.join(savedir, 'output_{}.txt'.format(total_max)), n, edges, 0)
     
     def update_network(self):
-        indices, weights, (states, actions, rewards, next_states, dones) = self.replay_buffer.get_minibatch(self.batch_size, self.steps)
+        indices, weights, (states, actions, rewards, next_states, dones, next_mask_post) = self.replay_buffer.get_minibatch(self.batch_size, self.steps)
 
-        next_actions, _ = self.qnet.sample_actions(next_states)
-        _, next_probs = self.target_qnet.sample_actions(next_states)
+        next_actions, _ = self.qnet.sample_actions(next_states, next_mask_post)
+        _, next_probs = self.target_qnet.sample_actions(next_states, next_mask_post)
 
         onehot_mask = self.create_mask(next_actions)
         next_dists = tf.reduce_sum(next_probs*onehot_mask, axis=1).numpy()
@@ -188,7 +200,8 @@ class NoisyDense(tf.keras.layers.Layer):
         super(NoisyDense, self).__init__()
         self.units = units
         self.trainable = trainable
-        self.activation = tf.keras.activation.get(activation)
+        # self.activation = tf.keras.activation.get(activation)
+        self.activation = tf.keras.layers.ReLU()
         self.sigma_0 = 0.5
 
     def build(self, input_shape):
@@ -237,12 +250,12 @@ class RainbowQNetwork(tf.keras.Model):
         self.n_atoms = n_atoms
         self.Vmin, self.Vmax = Vmin, Vmax
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
-        self.conv1 = kl.Conv2D(32,8,stride=4,activation="relu",kernel_initializer="he_normal")
-        self.conv2 = kl.Conv2D(64,4,stride=2,activation="relu",kernel_initializer="he_normal")
-        self.conv3 = kl.Conv2D(64,3,stride=1,activation="relu",kernel_initializer="he_normal")
+        self.conv1 = kl.Conv2D(16,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv2 = kl.Conv2D(16,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv3 = kl.Conv2D(16,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")
         self.flatten1 = kl.Flatten()
-        self.dense1 = NoisyDense(512, activation="relu")
-        self.dense2 = NoisyDense(512, activation="relu")
+        self.dense1 = NoisyDense(128, activation="relu")
+        self.dense2 = NoisyDense(128, activation="relu")
         self.value = NoisyDense(1*self.n_atoms)
         self.advantages = NoisyDense(self.action_space*self.n_atoms)
 
@@ -259,7 +272,8 @@ class RainbowQNetwork(tf.keras.Model):
         value = tf.reshape(value, (batch_size, 1, self.n_atoms))
 
         x2 = self.dense2(x)
-        advantages = tf.reshape(advantages, (batch_size, self.acton_space, self.n_atoms))
+        advantages = self.advantages(x2)
+        advantages = tf.reshape(advantages, (batch_size, self.action_space, self.n_atoms))
         advantages_mean = tf.reduce_mean(advantages, axis=1, keepdims=True)
         advantages_scaled = advantages - advantages_mean
         logits = value + advantages_scaled
@@ -267,15 +281,19 @@ class RainbowQNetwork(tf.keras.Model):
 
         return probs
 
-    def sample_action(self, x):
-        selected_actions, _ = self.sample_actions(x)
-        selected_action = selected_actions[0][0].numpy()
+    def sample_action(self, x, mask):
+        selected_actions, _ = self.sample_actions(x, mask)
+        # selected_action = selected_actions[0][0].numpy()
+        selected_action = selected_actions[0][0]
         return selected_action
     
-    def sample_actions(self, X):
+    def sample_actions(self, X, mask):
         probs = self(X)
-        q_means = tf.reduce_sum(probs*self.Z, axis=2, keepdims=True)
-        selected_actions = tf.argmax(q_means, axis=1)
+        # q_means = tf.reduce_sum(probs*self.Z, axis=2, keepdims=True)
+        q_means = tf.reduce_sum(probs*self.Z, axis=2, keepdims=True).numpy()
+        q_means = q_means[0,mask,0]
+        idx = np.argmax(q_means, axis=1)
+        selected_actions = mask[0,idx,0]
         return selected_actions, probs
 
 @dataclass
@@ -285,6 +303,7 @@ class Experience:
     reward: float
     next_state: np.ndarray
     done: bool
+    next_mask_post: np.ndarray
 
 class NstepPrioritizedReplayBuffer:
     def __init__(self, max_len, gamma, reward_clip, nstep_return=3, alpha=0.6, beta=0.4, total_steps=2500000):
@@ -321,7 +340,7 @@ class NstepPrioritizedReplayBuffer:
                     has_done = True
                     break
             
-            nstep_exp = Experience(self.temp_buffer[0].state, self.temp_buffer[0].action, nstep_return, self.temp_buffer[-1].next_state, has_done)
+            nstep_exp = Experience(self.temp_buffer[0].state, self.temp_buffer[0].action, nstep_return, self.temp_buffer[-1].next_state, has_done, self.temp_buffer[-1].next_mask_post)
             nstep_exp = zlib.compress(pickle.dumps(nstep_exp))
 
             if self.counter == self.max_len:
@@ -352,6 +371,7 @@ class NstepPrioritizedReplayBuffer:
         rewards = np.array([exp.reward for exp in selected_experiences]).reshape(-1,1)
         next_states = np.vstack([exp.next_state for exp in selected_experiences]).astype(np.float32)
         dones = np.array([exp.done for exp in selected_experiences]).reshape(-1,1)
+        
 
         return indices, weights, (states, actions, rewards, next_states, dones)
     
