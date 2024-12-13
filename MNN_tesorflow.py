@@ -175,7 +175,7 @@ def train():
             if check:
                 reward = 0
             else:
-                reward = 1-1/step
+                reward = step
 
             if step > start_training:
                 memory.add([G,inputs[0]*n+inputs[1],reward,next_G])

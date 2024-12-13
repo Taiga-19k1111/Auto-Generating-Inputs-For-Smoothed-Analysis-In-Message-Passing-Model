@@ -70,8 +70,7 @@ class RainbowAgent:
                 num_messages += 1
                 self.steps += 1
                 state = np.stack(frames, axis=2)[np.newaxis, ...]
-                mask_post = np.where(G[self.n**2:(self.n**2)*2] != -1)[0]
-                mask_post = mask_post.reshape(1,mask_post.size,1)
+                mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, 0, 1).reshape(1,self.n**2)
                 action = self.qnet.sample_action(state, mask_post)
                 post[action].pop(0)
                 inputs = [action//self.n, action%self.n, G, post]
@@ -81,7 +80,7 @@ class RainbowAgent:
                 next_state = np.stack(frames, axis=2)[np.newaxis, ...]
                 edges.append(inputs[0:2])
                 G = next_G
-                next_mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, False, True).reshape((1,self.n**2,1))
+                next_mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, 0, 1).reshape(1,self.n**2)
 
                 check = False
                 for po in post:
@@ -98,15 +97,15 @@ class RainbowAgent:
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 100:
+                if len(self.replay_buffer) >= 50:
                     if self.steps%self.update_period == 0:
                         loss = self.update_network()
                     
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
             memo_x.append(ep)
-            memo_y.append(step)
-            ave = ((ep-1)*ave+step)/ep
+            memo_y.append(num_messages)
+            ave = ((ep-1)*ave+num_messages)/ep
             memo_ave.append(ave)
             plt.clf()
             plt.plot(memo_x, memo_y)
@@ -116,7 +115,7 @@ class RainbowAgent:
             plt.savefig(os.path.join(savedir, 'ave_message_num.png'))
 
             if step > total_max:
-                total_max = step
+                total_max = num_messages
                 output_graph(os.path.join(savedir, 'output_{}.txt'.format(total_max)), n, edges, 0)
     
     def update_network(self):
@@ -141,8 +140,8 @@ class RainbowAgent:
             weighted_loss = weights*td_loss
             loss = tf.reduce_mean(weighted_loss)
 
-        grads = tape.gradient(loss, self.qnet.trainable_valiables)
-        self.optimizer.apply_gradients(zip(grads, self.qnet.trainable_variables))
+        grads = tape.gradient(loss, self.qnet.trainable_weights)
+        self.optimizer.apply_gradients(zip(grads, self.qnet.trainable_weights))
 
     def shift_and_projection(self, rewards, dones, next_dists):
         target_dists = np.zeros((self.batch_size, self.n_atoms))
@@ -160,7 +159,7 @@ class RainbowAgent:
             upper_probs = 1 - (upper_bj - bj)
 
             next_dist = next_dists[:, [j]]
-            indices = np.arange(self.batch_size).rehsape(-1,1)
+            indices = np.arange(self.batch_size).reshape(-1,1)
 
             target_dists[indices[neq_mask], lower_bj[neq_mask]] += (lower_probs*next_dist)[neq_mask]
             target_dists[indices[neq_mask], upper_bj[neq_mask]] += (upper_probs*next_dist)[neq_mask]
@@ -287,13 +286,19 @@ class RainbowQNetwork(tf.keras.Model):
         selected_action = selected_actions[0][0]
         return selected_action
     
-    def sample_actions(self, X, mask):
+    def sample_actions(self, X, masks):
         probs = self(X)
         # q_means = tf.reduce_sum(probs*self.Z, axis=2, keepdims=True)
         q_means = tf.reduce_sum(probs*self.Z, axis=2, keepdims=True).numpy()
-        q_means = q_means[0,mask,0]
-        idx = np.argmax(q_means, axis=1)
-        selected_actions = mask[0,idx,0]
+        batch_size = q_means.shape[0]
+        selected_actions = np.zeros((batch_size,1), dtype=np.int64)
+        for idx in range(batch_size):
+            mask = masks[idx]
+            if not mask.any():
+                mask = np.ones(mask.shape)
+            post_in_message = np.where(mask == 1)[0]
+            q_means_idx = q_means[idx,post_in_message,:]
+            selected_actions[idx][0] = post_in_message[np.argmax(q_means_idx, axis=1)[0]]
         return selected_actions, probs
 
 @dataclass
@@ -371,9 +376,9 @@ class NstepPrioritizedReplayBuffer:
         rewards = np.array([exp.reward for exp in selected_experiences]).reshape(-1,1)
         next_states = np.vstack([exp.next_state for exp in selected_experiences]).astype(np.float32)
         dones = np.array([exp.done for exp in selected_experiences]).reshape(-1,1)
-        
+        next_post_masks = np.vstack([exp.next_mask_post for exp in selected_experiences]).astype(np.int8)
 
-        return indices, weights, (states, actions, rewards, next_states, dones)
+        return indices, weights, (states, actions, rewards, next_states, dones, next_post_masks)
     
     def update_priority(self, indices, td_errors):
         priorities = (np.abs(td_errors) + self.epsilon)**self.alpha
