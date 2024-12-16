@@ -183,22 +183,22 @@ def train():
 
             G = next_G
             if len(memory) >= pool_size and total_step >= 10000:
-                inputs = np.zeros([pool_size,n*n])
-                targets = np.zeros([pool_size,n*n])
+                inputs = cp.zeros([pool_size,n*n])
+                targets = cp.zeros([pool_size,n*n])
 
                 minibatch = memory.sample(pool_size)
                 for i, [G_b,inputs_b,reward_b,next_G_b] in enumerate(minibatch):
                     inputs[i] = G_b[n*n:n*n*2]
-                    next_initial_post = (next_G_b[n*n:n*n*2] != -1)
+                    next_initial_post = cp.asarray(next_G_b[n*n:n*n*2] != -1)
                     if next_initial_post.any():
                         next_q = target_qn.model.predict(np.array([next_G_b[n*n:n*n*2]]))[0]
-                        max_q = np.amax(next_q*np.where(next_initial_post,1,0))
-                        target = reward_b + GAMMA*max_q
+                        max_q = cp.amax(next_q*cp.where(next_initial_post,1,0))
+                        target = cp.asarray(reward_b) + GAMMA*max_q
                     else:
-                        target =reward_b
-                    targets[i] = main_qn.model.predict(np.array([inputs[i]]))[0]
+                        target = cp.asarray(reward_b)
+                    targets[i] = cp.asarray(main_qn.model.predict(np.array([inputs[i]]))[0])
                     targets[i][inputs_b] = target
-                main_qn.model.fit(inputs, targets, epochs=1, verbose=0)
+                main_qn.model.fit(cp.asnumpy(inputs), cp.asnumpy(targets), epochs=1, verbose=0)
 
         memo_x.append(ep)
         memo_y.append(step)

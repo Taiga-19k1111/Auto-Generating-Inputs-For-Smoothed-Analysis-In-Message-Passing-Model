@@ -26,7 +26,16 @@ def output_graph(filename, n, inputs, form):
                     if j != 0:
                         f.write(' ')
                     f.write('{}'.format(G[i*n+j]))
-                f.write('\n')                    
+                f.write('\n')
+        else:
+            G, num_edges, start_node = inputs
+            f.write('{} {} {}\n'.format(n, num_edges, start_node))
+            for i in range(n):
+                for j in range(n):
+                    if j != 0:
+                        f.write(' ')
+                    f.write('{}'.format(G[i][j]))
+                f.write('\n')                                
 
 def output_sequence(filename, n , sequence):
     with open(filename, 'w') as f:
