@@ -1,9 +1,9 @@
 solver: 'solvers\shortest_path.exe'
-n: 16
+n: 31
 iteration: 100000
 restart: 10000
 seed: 1234
-dirname: 'results\shortest_path_DQN_n16_tensorflow_num_message'
+dirname: 'results\shortest_path_DQN_n31_tensorflow'
 gpu: 0
 form: 2
 

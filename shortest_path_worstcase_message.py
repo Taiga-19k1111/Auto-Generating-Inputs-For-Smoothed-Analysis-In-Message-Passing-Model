@@ -35,7 +35,7 @@ def update_state(n, G, dist, post):
                 post[receive*n+i].append(dist[receive]+G[receive][i])
     return post, dist
 
-N = 16
+N = 31
 G = gen_worstcase(N)
 post, dist = gen_initial_graph_state(G,N)
 check = True

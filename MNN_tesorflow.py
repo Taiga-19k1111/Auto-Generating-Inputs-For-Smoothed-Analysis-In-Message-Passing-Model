@@ -36,7 +36,7 @@ class Memory():
         self.buffer.append(experience)
 
     def sample(self,batch_size):
-        idx = np.random.choice(np.arange(len(self.buffer)), size=batch_size, replace=False)
+        idx = cp.random.choice(cp.arange(len(self.buffer)), size=batch_size, replace=False)
         return [self.buffer[int(i)] for i in idx]
     
     def __len__(self):
@@ -91,7 +91,7 @@ def train():
 
     E_START = 1.0
     E_STOP = 0
-    E_DECAY_RATE = 0.0001
+    E_DECAY_RATE = 0.00001
     GAMMA = 0.99
 
     np.random.seed(conf['seed'])
@@ -151,7 +151,7 @@ def train():
             step += 1
             epsilon = E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*total_step)
 
-            if epsilon > np.random.uniform(0,1,1):
+            if epsilon > cp.random.uniform(0,1,1):
                 mx = np.random.uniform(0,1,n*n)
                 ep_check = 0
             else:
@@ -172,17 +172,17 @@ def train():
                     check = True
                     break
 
-            # if check:
-            #     reward = 0
-            # else:
-            #     reward = step
-            reward = r
+            if check:
+                reward = 0
+            else:
+                reward = step
+            # reward = r
 
             if step > start_training:
                 memory.add([G,inputs[0]*n+inputs[1],reward,next_G])
 
             G = next_G
-            if len(memory) >= pool_size and total_step >= 1000:
+            if len(memory) >= pool_size and total_step >= 10000:
                 inputs = np.zeros([pool_size,n*n])
                 targets = np.zeros([pool_size,n*n])
 
