@@ -47,7 +47,7 @@ counts = []
 rep = 1000
 epsilon = 1
 for _ in range(rep):
-    N = 31
+    N = 16
     G = gen_worstcase(N)
     post, dist = gen_initial_graph_state(G,N)
     check = True

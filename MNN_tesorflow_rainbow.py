@@ -33,7 +33,7 @@ class RainbowAgent:
         self.batch_size = 32
         self.n_frames = 4
         self.update_period = 4
-        self.target_update_period = 10000
+        self.target_update_period = 15000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = -10, 10
@@ -48,7 +48,7 @@ class RainbowAgent:
 
         self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
-        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=True, alpha=0.6, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
+        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=False, alpha=0.6, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
 
         self.steps = 0
 
@@ -97,12 +97,14 @@ class RainbowAgent:
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 50:
+                if len(self.replay_buffer) >= 10000:
                     if self.steps%self.update_period == 0:
                         loss = self.update_network()
+                        print(loss)
                     
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
+
             memo_x.append(ep)
             memo_y.append(num_messages)
             ave = ((ep-1)*ave+num_messages)/ep
@@ -114,7 +116,7 @@ class RainbowAgent:
             plt.plot(memo_x, memo_ave)
             plt.savefig(os.path.join(savedir, 'ave_message_num.png'))
 
-            if step > total_max:
+            if num_messages > total_max:
                 total_max = num_messages
                 output_graph(os.path.join(savedir, 'output_{}.txt'.format(total_max)), n, edges, 0)
     
@@ -140,8 +142,13 @@ class RainbowAgent:
             weighted_loss = weights*td_loss
             loss = tf.reduce_mean(weighted_loss)
 
-        grads = tape.gradient(loss, self.qnet.trainable_weights)
-        self.optimizer.apply_gradients(zip(grads, self.qnet.trainable_weights))
+        grads = tape.gradient(loss, self.qnet.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.qnet.trainable_variables))
+
+        td_loss = td_loss.numpy().flatten()
+        self.replay_buffer.update_priority(indices, td_loss)
+
+        return loss
 
     def shift_and_projection(self, rewards, dones, next_dists):
         target_dists = np.zeros((self.batch_size, self.n_atoms))
@@ -298,7 +305,7 @@ class RainbowQNetwork(tf.keras.Model):
                 mask = np.ones(mask.shape)
             post_in_message = np.where(mask == 1)[0]
             q_means_idx = q_means[idx,post_in_message,:]
-            selected_actions[idx][0] = post_in_message[np.argmax(q_means_idx, axis=1)[0]]
+            selected_actions[idx][0] = post_in_message[np.argmax(q_means_idx, axis=0)[0]]
         return selected_actions, probs
 
 @dataclass
