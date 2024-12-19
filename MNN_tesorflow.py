@@ -36,7 +36,7 @@ class Memory():
         self.buffer.append(experience)
 
     def sample(self,batch_size):
-        idx = cp.random.choice(cp.arange(len(self.buffer)), size=batch_size, replace=False)
+        idx = np.random.choice(np.arange(len(self.buffer)), size=batch_size, replace=False)
         return [self.buffer[int(i)] for i in idx]
     
     def __len__(self):
@@ -151,7 +151,7 @@ def train():
             step += 1
             epsilon = E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*total_step)
 
-            if epsilon > cp.random.uniform(0,1,1):
+            if epsilon > np.random.uniform(0,1,1):
                 mx = np.random.uniform(0,1,n*n)
                 ep_check = 0
             else:
@@ -175,30 +175,30 @@ def train():
             if check:
                 reward = 0
             else:
-                reward = step
+                reward = 1-1/step
             # reward = r
 
             if step > start_training:
                 memory.add([G,inputs[0]*n+inputs[1],reward,next_G])
 
             G = next_G
-            if len(memory) >= pool_size and total_step >= 10000:
-                inputs = cp.zeros([pool_size,n*n])
-                targets = cp.zeros([pool_size,n*n])
+            if len(memory) >= pool_size and total_step >= 1000:
+                inputs = np.zeros([pool_size,n*n])
+                targets = np.zeros([pool_size,n*n])
 
                 minibatch = memory.sample(pool_size)
                 for i, [G_b,inputs_b,reward_b,next_G_b] in enumerate(minibatch):
                     inputs[i] = G_b[n*n:n*n*2]
-                    next_initial_post = cp.asarray(next_G_b[n*n:n*n*2] != -1)
+                    next_initial_post = (next_G_b[n*n:n*n*2] != -1)
                     if next_initial_post.any():
                         next_q = target_qn.model.predict(np.array([next_G_b[n*n:n*n*2]]))[0]
-                        max_q = cp.amax(next_q*cp.where(next_initial_post,1,0))
-                        target = cp.asarray(reward_b) + GAMMA*max_q
+                        max_q = np.amax(next_q*np.where(next_initial_post,1,0))
+                        target = reward_b + GAMMA*max_q
                     else:
-                        target = cp.asarray(reward_b)
-                    targets[i] = cp.asarray(main_qn.model.predict(np.array([inputs[i]]))[0])
+                        target = reward_b
+                    targets[i] = main_qn.model.predict(np.array([inputs[i]]))[0]
                     targets[i][inputs_b] = target
-                main_qn.model.fit(cp.asnumpy(inputs), cp.asnumpy(targets), epochs=1, verbose=0)
+                main_qn.model.fit(inputs, targets, epochs=1, verbose=0)
 
         memo_x.append(ep)
         memo_y.append(step)
