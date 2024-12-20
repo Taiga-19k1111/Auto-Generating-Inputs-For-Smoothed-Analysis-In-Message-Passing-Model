@@ -6,6 +6,7 @@ matplotlib.use('Agg')
 
 import numpy as np
 import cupy as cp
+import copy
 import tensorflow as tf
 import tensorflow.keras.layers as kl
 from tensorflow.keras.models import Sequential
@@ -33,7 +34,8 @@ class BBFRainbowAgent:
         self.batch_size = 32
         self.n_frames = 4
         self.update_period = 4
-        self.target_update_period = 15000
+        self.target_update_period = 1500
+        self.reset_period = 2000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = -10, 10
@@ -43,8 +45,8 @@ class BBFRainbowAgent:
         self.n_step_return = 3
 
         self.action_space = self.n**2
-        self.qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms)
-        self.target_qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms)
+        self.qnet = RainbowQNetwork(self.n, self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
+        self.target_qnet = RainbowQNetwork(self.n, self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
 
         self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
@@ -58,9 +60,11 @@ class BBFRainbowAgent:
         memo_ave = []
         ave = 0
         total_max = 0
+        initial_G = gen_worstcase(self.n)
+        initial_G, initial_post = gen_initial_graph_state(initial_G, self.n)
         for ep in range(1,n_episodes+1):
-            G = gen_worstcase(self.n)
-            G,post = gen_initial_graph_state(G, self.n)
+            G = np.copy(initial_G)
+            post = copy.deepcopy(initial_post)
             frame = G[self.n*self.n:self.n*self.n*2].reshape((self.n,self.n))
             frames = collections.deque([frame]*self.n_frames, maxlen=self.n_frames)
             edges = []
@@ -97,13 +101,17 @@ class BBFRainbowAgent:
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 10000:
+                if len(self.replay_buffer) >= 100:
                     if self.steps%self.update_period == 0:
                         loss = self.update_network()
                         print(loss)
                     
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
+
+                    if self.steps%self.reset_period == 0:
+                        self.reset_weights()
+                        self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
             memo_x.append(ep)
             memo_y.append(num_messages)
@@ -121,19 +129,24 @@ class BBFRainbowAgent:
                 output_graph(os.path.join(savedir, 'output_{}.txt'.format(total_max)), n, edges, 0)
     
     def update_network(self):
-        indices, weights, (states, actions, rewards, next_states, dones, next_mask_post) = self.replay_buffer.get_minibatch(self.batch_size, self.steps)
+        indices, weights, (states, actions_all, rewards, next_states, dones, next_mask_posts) = self.replay_buffer.get_minibatch(self.batch_size, self.steps)
 
-        next_actions, _ = self.qnet.sample_actions(next_states, next_mask_post)
-        _, next_probs = self.target_qnet.sample_actions(next_states, next_mask_post)
+        next_actions, _, _ = self.qnet.sample_actions(next_states, next_mask_posts)
+        _, next_probs, _spr_projections = self.target_qnet.sample_actions(next_states, next_mask_posts)
 
         onehot_mask = self.create_mask(next_actions)
         next_dists = tf.reduce_sum(next_probs*onehot_mask, axis=1).numpy()
 
         target_dists = self.shift_and_projection(rewards, dones, next_dists)
 
+        spr_projections = _spr_projections/tf.norm(_spr_projections, ord=2, axis=-1, keepdims=True)
+
+        actions = actions_all[:,0].reshape((self.batch_size,1))
+
         onehot_mask = self.create_mask(actions)
+
         with tf.GradientTape() as tape:
-            probs = self.qnet(states)
+            probs, z_t, _ = self.qnet(states)
             dists = tf.reduce_sum(probs*onehot_mask, axis=1)
 
             dists = tf.clip_by_value(dists, 1e-6, 1.0)
@@ -141,6 +154,12 @@ class BBFRainbowAgent:
 
             weighted_loss = weights*td_loss
             loss = tf.reduce_mean(weighted_loss)
+
+            _spr_predictions = self.qnet.compute_predict(z_t, actions=actions_all)
+            spr_predictions = _spr_predictions/tf.norm(_spr_projections, ord=2, axis=-1, keepdims=True)
+            loss_spr = tf.reduce_mean(tf.reduce_sum((spr_predictions - spr_projections)**2, axis=-1))
+
+            loss += loss_spr
 
         grads = tape.gradient(loss, self.qnet.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.qnet.trainable_variables))
@@ -221,8 +240,14 @@ class BBFRainbowAgent:
     def reset_weights(self):
         for online_network in [self.qnet, self.target_qnet]:
             random_network = self.build_network()
-            for key in ["encoder", "project1", "project2", "value", "advantages"]
-
+            for key in ["encoder", "project1", "project2", "value", "advantages", "transition", "predict1"]:
+                subnet = getattr(online_network, key)
+                subnet_random = getattr(random_network, key)
+                if key in ["encoder", "transition"]:
+                    subnet.set_weights([0.5*online_param + 0.5*random_param for online_param, random_param in zip(subnet.get_weights(), subnet_random.get_weights())])
+                else:
+                    subnet.set_weights(subnet_random.get_weights())
+ 
 
 class NoisyDense(tf.keras.layers.Layer):
     def __init__(self, units, activation=None, trainable=True):
@@ -273,25 +298,31 @@ class NoisyDense(tf.keras.layers.Layer):
         return x
 
 class RainbowQNetwork(tf.keras.Model):
-    def __init__(self, action_space, Vmin, Vmax, n_atoms):
+    def __init__(self, n, action_space, Vmin, Vmax, n_atoms, width_scale):
         super(RainbowQNetwork, self).__init__()
+        self.n = n
         self.action_space = action_space
         self.n_atoms = n_atoms
         self.Vmin, self.Vmax = Vmin, Vmax
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
-        self.encoder = EncoderCNN()
+        self.width_scale = width_scale
+
+        self.encoder = EncoderCNN(self.width_scale)
         self.flatten1 = kl.Flatten()
         self.project1 = NoisyDense(128, activation="relu")
         self.project2 = NoisyDense(128, activation="relu")
         self.value = NoisyDense(1*self.n_atoms)
         self.advantages = NoisyDense(self.action_space*self.n_atoms)
-        self.transition = 
+
+        latent_dim = self.encoder.base_dim[-1]*self.width_scale
+        self.transition = TransitionModel(action_space=self.action_space, latent_dim=latent_dim)
+        self.predict1 = kl.Dense(256, activation=None, kernel_initializer="he_normal")
 
     @tf.function
     def call(self, x):
         batch_size = x.shape[0]
-        x = self.encoder()
-        x = self.flatten1(x)
+        z_t = self.encoder(x)
+        x = self.flatten1(z_t)
 
         x1 = self.project1(x)
         value = self.value(x1)
@@ -305,16 +336,18 @@ class RainbowQNetwork(tf.keras.Model):
         logits = value + advantages_scaled
         probs = tf.nn.softmax(logits, axis=2)
 
-        return probs
+        g = x1 + x2
 
-    def sample_action(self, x, mask):
-        selected_actions, _ = self.sample_actions(x, mask)
+        return probs, z_t, g
+
+    def sample_action(self, x, masks):
+        selected_actions, _, _ = self.sample_actions(x, masks)
         # selected_action = selected_actions[0][0].numpy()
         selected_action = selected_actions[0][0]
         return selected_action
     
     def sample_actions(self, X, masks):
-        probs = self(X)
+        probs, _, g = self(X)
         # q_means = tf.reduce_sum(probs*self.Z, axis=2, keepdims=True)
         q_means = tf.reduce_sum(probs*self.Z, axis=2, keepdims=True).numpy()
         batch_size = q_means.shape[0]
@@ -326,18 +359,30 @@ class RainbowQNetwork(tf.keras.Model):
             post_in_message = np.where(mask == 1)[0]
             q_means_idx = q_means[idx,post_in_message,:]
             selected_actions[idx][0] = post_in_message[np.argmax(q_means_idx, axis=0)[0]]
-        return selected_actions, probs
+        return selected_actions, probs, g
+    
+    @tf.function
+    def compute_predict(self, z_t, actions):
+        z_t_plus_k = self.transition(z_t, actions)
+        g = self.project1(z_t_plus_k) + self.project2(z_t_plus_k)
+        q = self.predict1(g)
+        return q
 
-class EncoderCNN(tf.keras.model):
-    def __init__(self):
-        self.conv1 = kl.Conv2D(16,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv2 = kl.Conv2D(16,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv3 = kl.Conv2D(16,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")        
+class EncoderCNN(tf.keras.Model):
+    def __init__(self, width_scale):
+        super(EncoderCNN, self).__init__()
+        self.base_dim = (4,8,8)
+        self.width_scale = width_scale
+        self.conv1 = kl.Conv2D(self.base_dim[0]*self.width_scale,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv2 = kl.Conv2D(self.base_dim[0]*self.width_scale,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv3 = kl.Conv2D(self.base_dim[0]*self.width_scale,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")        
 
     def call(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
+
+        return x
 
 class TransitionModel(tf.keras.Model):
     def __init__(self, action_space, latent_dim):
@@ -349,7 +394,9 @@ class TransitionModel(tf.keras.Model):
     def call(self, z_t, actions):
         T = actions.shape[-1]
         for i in range(T):
-            z_t = self.transiton_cell(z_t, action=actions[:, i, i+1])
+            z_t = self.transiton_cell(z_t, action=actions[:, i])
+        
+        return z_t
 
 class TransitionCell(tf.keras.Model):
     def __init__(self, action_space, latent_dim):
@@ -362,19 +409,20 @@ class TransitionCell(tf.keras.Model):
     def call(self, z_t, action):
         B,H,W,C = z_t.shape
 
-        action_onehot = tf.one_hot(action, depth=self.action_space)
+        action_onehot = tf.one_hot(tf.cast(action, tf.int32), depth=self.action_space)
         action_onehot = tf.broadcast_to(tf.reshape(action_onehot, (B,1,1,self.action_space)), (B,H,W,self.action_space))
 
-        x = tf.concat([z_t, action_onehot], axis=1)
+        x = tf.concat([z_t, action_onehot], axis=-1)
         x = self.conv1(x)
         x = self.conv2(x)
+        
         return x
 
 
 @dataclass
 class Experience:
     state: np.ndarray
-    action: float
+    action: np.ndarray
     reward: float
     next_state: np.ndarray
     done: bool
@@ -407,15 +455,16 @@ class NstepPrioritizedReplayBuffer:
         if len(self.temp_buffer) == self.nstep_return:
             nstep_return = 0
             has_done = False
+            actions = np.zeros(self.nstep_return)
             for i, exp in enumerate(self.temp_buffer):
+                actions[i] = exp.action
                 reward, done = exp.reward, exp.done
                 reward = np.clip(reward, -1, 1) if self.reward_clip else reward
                 nstep_return += (self.gamma**i)*(1 - done)*reward
                 if done:
                     has_done = True
                     break
-            
-            nstep_exp = Experience(self.temp_buffer[0].state, self.temp_buffer[0].action, nstep_return, self.temp_buffer[-1].next_state, has_done, self.temp_buffer[-1].next_mask_post)
+            nstep_exp = Experience(self.temp_buffer[0].state, actions, nstep_return, self.temp_buffer[-1].next_state, has_done, self.temp_buffer[-1].next_mask_post)
             nstep_exp = zlib.compress(pickle.dumps(nstep_exp))
 
             if self.counter == self.max_len:
@@ -440,7 +489,6 @@ class NstepPrioritizedReplayBuffer:
         weights = weights.reshape(-1,1).astype(np.float32)
 
         selected_experiences = [pickle.loads(zlib.decompress(self.buffer[idx])) for idx in indices]
-
         states = np.vstack([exp.state for exp in selected_experiences]).astype(np.float32)
         actions = np.vstack([exp.action for exp in selected_experiences]).astype(np.float32)
         rewards = np.array([exp.reward for exp in selected_experiences]).reshape(-1,1)
@@ -487,6 +535,16 @@ def decide_message(n, p, G, post):
     post[ind].pop(0)
 
     return [send,receive,G,post]
+
+def renormalize(x):
+    shape = x.shape
+    x = tf.reshape(x, shape=[shape[0], -1])
+    max_value = tf.reduce_max(x, axis=-1, keepdims=True)
+    min_value = tf.reduce_min(x, axis=-1, keepdims=True)
+    x = (x - min_value)/(max_value - min_value + 1e-5)
+    x = tf.reshape(x, shape=shape)
+
+    return x
 
 if __name__ == '__main__':
     conf = load_conf()

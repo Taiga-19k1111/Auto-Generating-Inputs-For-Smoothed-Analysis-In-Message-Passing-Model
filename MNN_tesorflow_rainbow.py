@@ -6,6 +6,7 @@ matplotlib.use('Agg')
 
 import numpy as np
 import cupy as cp
+import copy
 import tensorflow as tf
 import tensorflow.keras.layers as kl
 from tensorflow.keras.models import Sequential
@@ -30,10 +31,10 @@ class RainbowAgent:
     def __init__(self, n):
         self.n = n
         self.gamma = 0.99
-        self.batch_size = 32
+        self.batch_size = 16
         self.n_frames = 4
         self.update_period = 4
-        self.target_update_period = 15000
+        self.target_update_period = 2000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = -10, 10
@@ -48,7 +49,7 @@ class RainbowAgent:
 
         self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
-        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=False, alpha=0.6, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
+        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=False, alpha=0.8, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
 
         self.steps = 0
 
@@ -58,9 +59,11 @@ class RainbowAgent:
         memo_ave = []
         ave = 0
         total_max = 0
+        initial_G = gen_worstcase(self.n)
+        initial_G, initial_post = gen_initial_graph_state(initial_G, self.n)
         for ep in range(1,n_episodes+1):
-            G = gen_worstcase(self.n)
-            G,post = gen_initial_graph_state(G, self.n)
+            G = np.copy(initial_G)
+            post = copy.deepcopy(initial_post)
             frame = G[self.n*self.n:self.n*self.n*2].reshape((self.n,self.n))
             frames = collections.deque([frame]*self.n_frames, maxlen=self.n_frames)
             edges = []
@@ -97,7 +100,7 @@ class RainbowAgent:
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 10000:
+                if len(self.replay_buffer) >= 1000:
                     if self.steps%self.update_period == 0:
                         loss = self.update_network()
                         print(loss)
@@ -257,8 +260,8 @@ class RainbowQNetwork(tf.keras.Model):
         self.Vmin, self.Vmax = Vmin, Vmax
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
         self.conv1 = kl.Conv2D(16,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv2 = kl.Conv2D(16,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv3 = kl.Conv2D(16,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv2 = kl.Conv2D(32,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv3 = kl.Conv2D(64,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")
         self.flatten1 = kl.Flatten()
         self.dense1 = NoisyDense(128, activation="relu")
         self.dense2 = NoisyDense(128, activation="relu")
@@ -287,8 +290,8 @@ class RainbowQNetwork(tf.keras.Model):
 
         return probs
 
-    def sample_action(self, x, mask):
-        selected_actions, _ = self.sample_actions(x, mask)
+    def sample_action(self, x, masks):
+        selected_actions, _ = self.sample_actions(x, masks)
         # selected_action = selected_actions[0][0].numpy()
         selected_action = selected_actions[0][0]
         return selected_action
