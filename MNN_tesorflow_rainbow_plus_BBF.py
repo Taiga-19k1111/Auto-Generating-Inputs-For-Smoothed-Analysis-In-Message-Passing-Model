@@ -34,6 +34,7 @@ class BBFRainbowAgent:
         self.n_frames = 4
         self.update_period = 4
         self.target_update_period = 15000
+        self.reset_period = 20000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = -10, 10
@@ -43,8 +44,8 @@ class BBFRainbowAgent:
         self.n_step_return = 3
 
         self.action_space = self.n**2
-        self.qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms)
-        self.target_qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms)
+        self.qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
+        self.target_qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
 
         self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
@@ -104,6 +105,10 @@ class BBFRainbowAgent:
                     
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
+
+                    if self.step%self.reset_period == 0:
+                        self.reset_weights()
+                        self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
             memo_x.append(ep)
             memo_y.append(num_messages)
@@ -221,8 +226,14 @@ class BBFRainbowAgent:
     def reset_weights(self):
         for online_network in [self.qnet, self.target_qnet]:
             random_network = self.build_network()
-            for key in ["encoder", "project1", "project2", "value", "advantages"]
-
+            for key in ["encoder", "project1", "project2", "value", "advantages", "transition", "predict1"]:
+                subnet = getattr(online_network, key)
+                subnet_random = getattr(random_network, key)
+                if key in ["encoder", "transition"]:
+                    subnet.set_weights([0.5*online_param + 0.5*random_param for online_param, random_param in zip(subnet.get_weights(), subnet_random.get_weights())])
+                else:
+                    subnet.set_weights(subnet_random.get_weights())
+ 
 
 class NoisyDense(tf.keras.layers.Layer):
     def __init__(self, units, activation=None, trainable=True):
@@ -273,25 +284,30 @@ class NoisyDense(tf.keras.layers.Layer):
         return x
 
 class RainbowQNetwork(tf.keras.Model):
-    def __init__(self, action_space, Vmin, Vmax, n_atoms):
+    def __init__(self, action_space, Vmin, Vmax, n_atoms, width_scale):
         super(RainbowQNetwork, self).__init__()
         self.action_space = action_space
         self.n_atoms = n_atoms
         self.Vmin, self.Vmax = Vmin, Vmax
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
+        self.width_scale = width_scale
+
         self.encoder = EncoderCNN()
         self.flatten1 = kl.Flatten()
         self.project1 = NoisyDense(128, activation="relu")
         self.project2 = NoisyDense(128, activation="relu")
         self.value = NoisyDense(1*self.n_atoms)
         self.advantages = NoisyDense(self.action_space*self.n_atoms)
-        self.transition = 
+
+        latent_dim = self.encoder.base_dim[-1]*self.width_scale
+        self.transition = TransitionModel(action_space=self.action_space, latent_dim=latent_dim)
+        self.predict1 = kl.Dense(256, activation=None, kernel_initializer="he_normal")
 
     @tf.function
     def call(self, x):
         batch_size = x.shape[0]
-        x = self.encoder()
-        x = self.flatten1(x)
+        z_t = self.encoder()
+        x = self.flatten1(z_t)
 
         x1 = self.project1(x)
         value = self.value(x1)
@@ -305,7 +321,7 @@ class RainbowQNetwork(tf.keras.Model):
         logits = value + advantages_scaled
         probs = tf.nn.softmax(logits, axis=2)
 
-        return probs
+        return probs, z_t
 
     def sample_action(self, x, mask):
         selected_actions, _ = self.sample_actions(x, mask)
@@ -314,7 +330,7 @@ class RainbowQNetwork(tf.keras.Model):
         return selected_action
     
     def sample_actions(self, X, masks):
-        probs = self(X)
+        probs, _ = self(X)
         # q_means = tf.reduce_sum(probs*self.Z, axis=2, keepdims=True)
         q_means = tf.reduce_sum(probs*self.Z, axis=2, keepdims=True).numpy()
         batch_size = q_means.shape[0]
@@ -327,12 +343,18 @@ class RainbowQNetwork(tf.keras.Model):
             q_means_idx = q_means[idx,post_in_message,:]
             selected_actions[idx][0] = post_in_message[np.argmax(q_means_idx, axis=0)[0]]
         return selected_actions, probs
+    
+    def compute_predict(self, z_t, actions):
+        z_t_plus_k = self.transition(z_t, actions)
+        g = self.
 
 class EncoderCNN(tf.keras.model):
-    def __init__(self):
-        self.conv1 = kl.Conv2D(16,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv2 = kl.Conv2D(16,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv3 = kl.Conv2D(16,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")        
+    def __init__(self, width_scale):
+        self.base_dim = (4,8,8)
+        self.width_scale = width_scale
+        self.conv1 = kl.Conv2D(self.base_dim[0]*self.width_scale,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv2 = kl.Conv2D(self.base_dim[0]*self.width_scale,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv3 = kl.Conv2D(self.base_dim[0]*self.width_scale,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")        
 
     def call(self, x):
         x = self.conv1(x)
@@ -487,6 +509,16 @@ def decide_message(n, p, G, post):
     post[ind].pop(0)
 
     return [send,receive,G,post]
+
+def renormalize(x):
+    shape = x.shape
+    x = tf.reshape(x, shape=[shape[0], -1])
+    max_value = tf.reduce_max(x, axis=-1, keepdims=True)
+    min_value = tf.reduce_min(x, axis=-1, keepdims=True)
+    x = (x - min_value)/(max_value - min_value + 1e-5)
+    x = tf.reshape(x, shape=shape)
+
+    return x
 
 if __name__ == '__main__':
     conf = load_conf()
