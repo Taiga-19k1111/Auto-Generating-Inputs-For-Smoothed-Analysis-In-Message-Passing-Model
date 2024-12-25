@@ -45,8 +45,12 @@ class BBFRainbowAgent:
         self.n_step_return = 3
 
         self.action_space = self.n**2
-        self.qnet = RainbowQNetwork(self.n, self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
-        self.target_qnet = RainbowQNetwork(self.n, self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
+        # self.qnet = RainbowQNetwork(self.n, self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
+        # self.target_qnet = RainbowQNetwork(self.n, self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
+
+        self.qnet = self.build_network()
+        self.target_qnet = self.build_network()
+        self.target_qnet.set_weights(self.qnet.get_weights())
 
         self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
@@ -54,10 +58,14 @@ class BBFRainbowAgent:
 
         self.steps = 0
 
+        self.learning_num = 0
+
     def learn(self, n_episodes):
         memo_x = []
         memo_y = []
         memo_ave = []
+        losses = []
+        learning_nums = []
         ave = 0
         total_max = 0
         initial_G = gen_worstcase(self.n)
@@ -103,8 +111,13 @@ class BBFRainbowAgent:
 
                 if len(self.replay_buffer) >= 10000:
                     if self.steps%self.update_period == 0:
+                        self.learning_num += 1
                         loss = self.update_network()
-                        print(loss)
+                        losses.append(loss.numpy())
+                        learning_nums.append(self.learning_num)
+                        plt.clf()
+                        plt.plot(learning_nums, losses)
+                        plt.savefig(os.path.join(savedir, 'loss.png'))
                     
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
@@ -232,8 +245,10 @@ class BBFRainbowAgent:
     
     def build_network(self):
         dummy_state, dummy_mask_post = self.get_dummy()
-        net = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms)
-        action = net.sample_action(dummy_state, dummy_mask_post)
+        net = RainbowQNetwork(self.n, self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
+        dummy_action = net.sample_action(dummy_state, dummy_mask_post).reshape((1,1))
+        _, dummy_z_t, _ = net(dummy_state)
+        net.compute_predict(dummy_z_t, dummy_action)
 
         return net
 
