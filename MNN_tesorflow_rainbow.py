@@ -31,7 +31,7 @@ class RainbowAgent:
     def __init__(self, n):
         self.n = n
         self.gamma = 0.99
-        self.batch_size = 16
+        self.batch_size = 32
         self.n_frames = 4
         self.update_period = 4
         self.target_update_period = 2000
@@ -49,7 +49,7 @@ class RainbowAgent:
 
         self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
-        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=False, alpha=0.8, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
+        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=True, alpha=0.8, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
 
         self.steps = 0
 
@@ -100,10 +100,10 @@ class RainbowAgent:
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 1000:
+                if len(self.replay_buffer) >= 10000:
                     if self.steps%self.update_period == 0:
                         loss = self.update_network()
-                        print(loss)
+                        # print(loss)
                     
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
@@ -259,12 +259,12 @@ class RainbowQNetwork(tf.keras.Model):
         self.n_atoms = n_atoms
         self.Vmin, self.Vmax = Vmin, Vmax
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
-        self.conv1 = kl.Conv2D(16,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv2 = kl.Conv2D(32,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv1 = kl.Conv2D(32,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv2 = kl.Conv2D(64,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
         self.conv3 = kl.Conv2D(64,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")
         self.flatten1 = kl.Flatten()
-        self.dense1 = NoisyDense(128, activation="relu")
-        self.dense2 = NoisyDense(128, activation="relu")
+        self.dense1 = NoisyDense(256, activation="relu")
+        self.dense2 = NoisyDense(256, activation="relu")
         self.value = NoisyDense(1*self.n_atoms)
         self.advantages = NoisyDense(self.action_space*self.n_atoms)
 
@@ -448,32 +448,6 @@ if __name__ == '__main__':
     cp.random.seed(conf['seed'])
 
     logfile = os.path.join(savedir, 'log')
-
-    ave = 0
-    aves = []
-    ma = 0
-    global_ma = 0
-
-    G = gen_worstcase(n)
-    G,post = gen_initial_graph_state(G, n)
-
-    epoch = conf['epoch']
-    p = conf['erp']
-    m = conf['message']
-    step = conf['step']
-
-    pool_size = 10
-    start_training = 5
-    r_bests = []
-    inputs_bests = []
-    z_bests = []
-
-    if no_replay:
-        pool_size = 1
-        start_training = 1e9
-
-    iteration = 0
-    from_restart = 0
     
     RA = RainbowAgent(n)
     RA.learn(100000)

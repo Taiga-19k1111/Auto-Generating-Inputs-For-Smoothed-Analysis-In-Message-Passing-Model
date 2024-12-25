@@ -33,9 +33,9 @@ class BBFRainbowAgent:
         self.gamma = 0.99
         self.batch_size = 32
         self.n_frames = 4
-        self.update_period = 4
-        self.target_update_period = 1500
-        self.reset_period = 2000
+        self.update_period = 1
+        self.target_update_period = 10000
+        self.reset_period = 40000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = -10, 10
@@ -101,7 +101,7 @@ class BBFRainbowAgent:
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 100:
+                if len(self.replay_buffer) >= 10000:
                     if self.steps%self.update_period == 0:
                         loss = self.update_network()
                         print(loss)
@@ -298,7 +298,7 @@ class NoisyDense(tf.keras.layers.Layer):
         return x
 
 class RainbowQNetwork(tf.keras.Model):
-    def __init__(self, n, action_space, Vmin, Vmax, n_atoms, width_scale):
+    def __init__(self, n, action_space, Vmin, Vmax, n_atoms, width_scale, hidden_dim=2048):
         super(RainbowQNetwork, self).__init__()
         self.n = n
         self.action_space = action_space
@@ -306,22 +306,23 @@ class RainbowQNetwork(tf.keras.Model):
         self.Vmin, self.Vmax = Vmin, Vmax
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
         self.width_scale = width_scale
+        self.hidden_dim = hidden_dim
 
         self.encoder = EncoderCNN(self.width_scale)
         self.flatten1 = kl.Flatten()
-        self.project1 = NoisyDense(128, activation="relu")
-        self.project2 = NoisyDense(128, activation="relu")
+        self.project1 = NoisyDense(self.hidden_dim, activation="relu")
+        self.project2 = NoisyDense(self.hidden_dim, activation="relu")
         self.value = NoisyDense(1*self.n_atoms)
         self.advantages = NoisyDense(self.action_space*self.n_atoms)
 
         latent_dim = self.encoder.base_dim[-1]*self.width_scale
         self.transition = TransitionModel(action_space=self.action_space, latent_dim=latent_dim)
-        self.predict1 = kl.Dense(256, activation=None, kernel_initializer="he_normal")
+        self.predict1 = kl.Dense(self.hidden_dim, activation=None, kernel_initializer="he_normal")
 
     @tf.function
     def call(self, x):
         batch_size = x.shape[0]
-        z_t = self.encoder(x)
+        z_t = renormalize(self.encoder(x))
         x = self.flatten1(z_t)
 
         x1 = self.project1(x)
@@ -363,7 +364,7 @@ class RainbowQNetwork(tf.keras.Model):
     
     @tf.function
     def compute_predict(self, z_t, actions):
-        z_t_plus_k = self.transition(z_t, actions)
+        z_t_plus_k = self.flatten1(self.transition(z_t, actions))
         g = self.project1(z_t_plus_k) + self.project2(z_t_plus_k)
         q = self.predict1(g)
         return q
@@ -371,11 +372,11 @@ class RainbowQNetwork(tf.keras.Model):
 class EncoderCNN(tf.keras.Model):
     def __init__(self, width_scale):
         super(EncoderCNN, self).__init__()
-        self.base_dim = (4,8,8)
+        self.base_dim = (16,32,32)
         self.width_scale = width_scale
         self.conv1 = kl.Conv2D(self.base_dim[0]*self.width_scale,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv2 = kl.Conv2D(self.base_dim[0]*self.width_scale,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv3 = kl.Conv2D(self.base_dim[0]*self.width_scale,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")        
+        self.conv2 = kl.Conv2D(self.base_dim[1]*self.width_scale,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.conv3 = kl.Conv2D(self.base_dim[2]*self.width_scale,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")        
 
     def call(self, x):
         x = self.conv1(x)
@@ -394,7 +395,7 @@ class TransitionModel(tf.keras.Model):
     def call(self, z_t, actions):
         T = actions.shape[-1]
         for i in range(T):
-            z_t = self.transiton_cell(z_t, action=actions[:, i])
+            z_t = self.transiton_cell(z_t, action=actions[:, i:i+1])
         
         return z_t
 
@@ -415,7 +416,7 @@ class TransitionCell(tf.keras.Model):
         x = tf.concat([z_t, action_onehot], axis=-1)
         x = self.conv1(x)
         x = self.conv2(x)
-        
+        x = renormalize(x)
         return x
 
 
