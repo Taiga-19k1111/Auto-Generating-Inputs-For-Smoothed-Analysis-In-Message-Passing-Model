@@ -131,9 +131,9 @@ class RainbowAgent:
                 #         self.target_qnet.set_weights(self.qnet.get_weights())
             
             if ep%self.explore_episodes == 0:
-                for _ in range(self.learning_times):
+                for l in range(self.learning_times):
                     loss = self.update_network()
-                    print(loss)
+                    print(l, loss.numpy())
                 self.target_qnet.set_weights(self.qnet.get_weights())
 
             memo_x.append(ep)
