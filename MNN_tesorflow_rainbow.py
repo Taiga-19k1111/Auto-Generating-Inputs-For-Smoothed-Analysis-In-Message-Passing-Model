@@ -29,11 +29,13 @@ from gen_SSSP_worstcase import gen_worstcase
 
 class RainbowAgent:
     def __init__(self, n):
+        self.is_noisy = False
+        
         self.n = n
         self.gamma = 0.99
         self.batch_size = 32
         self.n_frames = 4
-        self.update_period = 4
+        self.update_period = 1
         self.target_update_period = 2000
 
         self.n_atoms = 51
@@ -44,8 +46,8 @@ class RainbowAgent:
         self.n_step_return = 3
 
         self.action_space = self.n**2
-        self.qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms)
-        self.target_qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms)
+        self.qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, is_noisy=self.is_noisy)
+        self.target_qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, is_noisy=self.is_noisy)
 
         self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
@@ -54,6 +56,10 @@ class RainbowAgent:
         self.steps = 0
 
     def learn(self, n_episodes):
+        E_START = 1.0
+        E_STOP = 0
+        E_DECAY_RATE = 0.0001
+        GAMMA = 0.99
         memo_x = []
         memo_y = []
         memo_ave = []
@@ -74,7 +80,16 @@ class RainbowAgent:
                 self.steps += 1
                 state = np.stack(frames, axis=2)[np.newaxis, ...]
                 mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, 0, 1).reshape(1,self.n**2)
-                action = self.qnet.sample_action(state, mask_post)
+                if self.is_noisy:
+                    action = self.qnet.sample_action(state, mask_post)
+                else:
+                    epsilon = E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*self.steps)
+                    print(epsilon)
+                    if epsilon > np.random.uniform(0,1,1):
+                        mx = np.random.uniform(1,2,self.n**2)*mask_post.reshape(self.n**2)
+                        action = np.argmax(mx)
+                    else:
+                        action = self.qnet.sample_action(state, mask_post)
                 post[action].pop(0)
                 inputs = [action//self.n, action%self.n, G, post]
                 post, next_G, r = calc_reward(n, inputs, solver, tmpdir, form)
@@ -100,7 +115,7 @@ class RainbowAgent:
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 10000:
+                if len(self.replay_buffer) >= 1000:
                     if self.steps%self.update_period == 0:
                         loss = self.update_network()
                         # print(loss)
@@ -253,7 +268,7 @@ class NoisyDense(tf.keras.layers.Layer):
         return x
 
 class RainbowQNetwork(tf.keras.Model):
-    def __init__(self, action_space, Vmin, Vmax, n_atoms):
+    def __init__(self, action_space, Vmin, Vmax, n_atoms, is_noisy):
         super(RainbowQNetwork, self).__init__()
         self.action_space = action_space
         self.n_atoms = n_atoms
@@ -263,10 +278,16 @@ class RainbowQNetwork(tf.keras.Model):
         self.conv2 = kl.Conv2D(64,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
         self.conv3 = kl.Conv2D(64,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")
         self.flatten1 = kl.Flatten()
-        self.dense1 = NoisyDense(256, activation="relu")
-        self.dense2 = NoisyDense(256, activation="relu")
-        self.value = NoisyDense(1*self.n_atoms)
-        self.advantages = NoisyDense(self.action_space*self.n_atoms)
+        if is_noisy:
+            self.dense1 = NoisyDense(256, activation="relu")
+            self.dense2 = NoisyDense(256, activation="relu")
+            self.value = NoisyDense(1*self.n_atoms)
+            self.advantages = NoisyDense(self.action_space*self.n_atoms)
+        else:
+            self.dense1 = kl.Dense(256, activation="relu")
+            self.dense2 = kl.Dense(256, activation="relu")
+            self.value = kl.Dense(1*self.n_atoms)
+            self.advantages = kl.Dense(self.action_space*self.n_atoms)
 
     @tf.function
     def call(self, x):
@@ -446,6 +467,7 @@ if __name__ == '__main__':
 
     np.random.seed(conf['seed'])
     cp.random.seed(conf['seed'])
+    tf.random.set_seed(conf['seed'])
 
     logfile = os.path.join(savedir, 'log')
     

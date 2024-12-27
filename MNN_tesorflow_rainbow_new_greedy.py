@@ -33,8 +33,8 @@ class RainbowAgent:
         self.gamma = 0.99
         self.batch_size = 32
         self.n_frames = 4
-        self.update_period = 4
-        self.target_update_period = 2000
+        self.update_period = 1
+        self.target_update_period = 1000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = -10, 10
@@ -117,24 +117,25 @@ class RainbowAgent:
                     reward = 0
                     transition = (state, action, reward, next_state, False, next_mask_post)
                 else:
-                    reward = 1-1/num_messages
+                    reward = num_messages
                     transition = (state, action, reward, next_state, True, next_mask_post)
                 
                 self.replay_buffer.push(transition)
 
-                # if len(self.replay_buffer) >= 10000:
-                #     if self.steps%self.update_period == 0:
-                #         loss = self.update_network()
-                #         print(loss)
+                if len(self.replay_buffer) >= 10000:
+                    if self.steps%self.update_period == 0:
+                        loss = self.update_network()
+                        print(loss)
                     
-                #     if self.steps%self.target_update_period == 0:
-                #         self.target_qnet.set_weights(self.qnet.get_weights())
+                    if self.steps%self.target_update_period == 0:
+                        self.target_qnet.set_weights(self.qnet.get_weights())
             
-            if ep%self.explore_episodes == 0:
-                for l in range(self.learning_times):
-                    loss = self.update_network()
-                    print(l, loss.numpy())
-                self.target_qnet.set_weights(self.qnet.get_weights())
+            # if ep%self.explore_episodes == 0:
+            #     for l in range(self.learning_times):
+            #         loss = self.update_network()
+            #         print(l, loss.numpy())
+            #     self.target_qnet.set_weights(self.qnet.get_weights())
+            #     self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=True, alpha=0.8, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
 
             memo_x.append(ep)
             memo_y.append(num_messages)

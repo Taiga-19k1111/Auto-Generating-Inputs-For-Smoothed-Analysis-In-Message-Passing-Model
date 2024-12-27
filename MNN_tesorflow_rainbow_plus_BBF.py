@@ -34,8 +34,8 @@ class BBFRainbowAgent:
         self.batch_size = 32
         self.n_frames = 4
         self.update_period = 1
-        self.target_update_period = 10000
-        self.reset_period = 40000
+        self.target_update_period = 100
+        self.reset_period = 1000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = -10, 10
@@ -111,20 +111,23 @@ class BBFRainbowAgent:
 
                 if len(self.replay_buffer) >= 10000:
                     if self.steps%self.update_period == 0:
-                        self.learning_num += 1
-                        loss = self.update_network()
-                        losses.append(loss.numpy())
-                        learning_nums.append(self.learning_num)
-                        plt.clf()
-                        plt.plot(learning_nums, losses)
-                        plt.savefig(os.path.join(savedir, 'loss.png'))
+                        # self.learning_num += 1
+                        loss1 = self.update_network()
+                        loss2 = self.update_network()
+                        with open(logfile, 'a') as f:
+                            print(loss1)
+                            print(loss2)
+                        # learning_nums.append(self.learning_num)
+                        # plt.clf()
+                        # plt.plot(learning_nums, losses)
+                        # plt.savefig(os.path.join(savedir, 'loss.png'))
                     
-                    if self.steps%self.target_update_period == 0:
-                        self.target_qnet.set_weights(self.qnet.get_weights())
+            if ep%self.target_update_period == 0:
+                self.target_qnet.set_weights(self.qnet.get_weights())
 
-                    if self.steps%self.reset_period == 0:
-                        self.reset_weights()
-                        self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
+            if ep%self.reset_period == 0:
+                self.reset_weights()
+                self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
             memo_x.append(ep)
             memo_y.append(num_messages)
@@ -580,6 +583,7 @@ if __name__ == '__main__':
 
     np.random.seed(conf['seed'])
     cp.random.seed(conf['seed'])
+    tf.random.set_seed(conf['seed'])
 
     logfile = os.path.join(savedir, 'log')
 
