@@ -34,7 +34,7 @@ class RainbowAgent:
         self.batch_size = 32
         self.n_frames = 4
         self.update_period = 1
-        self.target_update_period = 1000
+        self.target_update_period = 2000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = -10, 10
@@ -67,7 +67,10 @@ class RainbowAgent:
         initial_G = gen_worstcase(self.n)
         initial_G, initial_post = gen_initial_graph_state(initial_G, self.n)
         for ep in range(1,n_episodes+1):
-            self.explore_switch = (ep%2 == 0)
+            if self.steps < 1000:
+                 self.explore_switch = False
+            else:
+                self.explore_switch = (ep%2 == 0)
             G = np.copy(initial_G)
             post = copy.deepcopy(initial_post)
             frame = G[self.n*self.n:self.n*self.n*2].reshape((self.n,self.n))
@@ -117,12 +120,12 @@ class RainbowAgent:
                     reward = 0
                     transition = (state, action, reward, next_state, False, next_mask_post)
                 else:
-                    reward = num_messages
+                    reward = 1-1/num_messages
                     transition = (state, action, reward, next_state, True, next_mask_post)
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 10000:
+                if len(self.replay_buffer) >= 1000:
                     if self.steps%self.update_period == 0:
                         loss = self.update_network()
                         print(loss)

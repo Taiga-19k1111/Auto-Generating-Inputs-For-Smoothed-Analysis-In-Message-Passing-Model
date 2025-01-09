@@ -29,13 +29,15 @@ from gen_SSSP_worstcase import gen_worstcase
 
 class BBFRainbowAgent:
     def __init__(self, n):
+        self.is_noisy = False
+
         self.n = n
         self.gamma = 0.99
         self.batch_size = 32
         self.n_frames = 4
         self.update_period = 1
-        self.target_update_period = 100
-        self.reset_period = 1000
+        self.target_update_period = 2000
+        self.reset_period = 40000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = -10, 10
@@ -58,14 +60,16 @@ class BBFRainbowAgent:
 
         self.steps = 0
 
-        self.learning_num = 0
+        self.learning_ratio = 4
 
     def learn(self, n_episodes):
+        E_START = 1.0
+        E_STOP = 0.1
+        E_DECAY_RATE = 0.0001
+        GAMMA = 0.99
         memo_x = []
         memo_y = []
         memo_ave = []
-        losses = []
-        learning_nums = []
         ave = 0
         total_max = 0
         initial_G = gen_worstcase(self.n)
@@ -73,7 +77,7 @@ class BBFRainbowAgent:
         for ep in range(1,n_episodes+1):
             G = np.copy(initial_G)
             post = copy.deepcopy(initial_post)
-            frame = G[self.n*self.n:self.n*self.n*2].reshape((self.n,self.n))
+            frame = G[self.n*self.n:].reshape((self.n,self.n+1))
             frames = collections.deque([frame]*self.n_frames, maxlen=self.n_frames)
             edges = []
             check = True
@@ -83,11 +87,20 @@ class BBFRainbowAgent:
                 self.steps += 1
                 state = np.stack(frames, axis=2)[np.newaxis, ...]
                 mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, 0, 1).reshape(1,self.n**2)
-                action = self.qnet.sample_action(state, mask_post)
+                if self.is_noisy:
+                    action = self.qnet.sample_action(state, mask_post)
+                else:
+                    epsilon = E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*self.steps)
+                    print(epsilon)
+                    if epsilon > np.random.uniform(0,1,1):
+                        mx = np.random.uniform(1,2,self.n**2)*mask_post.reshape(self.n**2)
+                        action = np.argmax(mx)
+                    else:
+                        action = self.qnet.sample_action(state, mask_post)
                 post[action].pop(0)
                 inputs = [action//self.n, action%self.n, G, post]
                 post, next_G, r = calc_reward(n, inputs, solver, tmpdir, form)
-                next_frame = next_G[self.n**2:(self.n**2)*2].reshape((self.n,self.n))
+                next_frame = next_G[self.n**2:].reshape((self.n,self.n+1))
                 frames.append(next_frame)
                 next_state = np.stack(frames, axis=2)[np.newaxis, ...]
                 edges.append(inputs[0:2])
@@ -104,30 +117,30 @@ class BBFRainbowAgent:
                     reward = 0
                     transition = (state, action, reward, next_state, False, next_mask_post)
                 else:
-                    reward = 1-1/num_messages
+                    reward = num_messages
                     transition = (state, action, reward, next_state, True, next_mask_post)
                 
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 10000:
+                if len(self.replay_buffer) >= 1000:
                     if self.steps%self.update_period == 0:
-                        # self.learning_num += 1
-                        loss1 = self.update_network()
-                        loss2 = self.update_network()
-                        with open(logfile, 'a') as f:
-                            print(loss1)
-                            print(loss2)
-                        # learning_nums.append(self.learning_num)
-                        # plt.clf()
-                        # plt.plot(learning_nums, losses)
-                        # plt.savefig(os.path.join(savedir, 'loss.png'))
+                        for _ in range(self.learning_ratio):
+                            # self.learning_num += 1
+                            self.update_network()
+                            # with open(logfile, 'a') as f:
+                            #     print(loss1)
+                            #     print(loss2)
+                            # learning_nums.append(self.learning_num)
+                            # plt.clf()
+                            # plt.plot(learning_nums, losses)
+                            # plt.savefig(os.path.join(savedir, 'loss.png'))
                     
-            if ep%self.target_update_period == 0:
-                self.target_qnet.set_weights(self.qnet.get_weights())
+                    if self.steps%self.target_update_period == 0:
+                        self.target_qnet.set_weights(self.qnet.get_weights())
 
-            if ep%self.reset_period == 0:
-                self.reset_weights()
-                self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
+                    if self.steps%self.reset_period == 0:
+                        self.reset_weights()
+                        self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
 
             memo_x.append(ep)
             memo_y.append(num_messages)
@@ -155,7 +168,7 @@ class BBFRainbowAgent:
 
         target_dists = self.shift_and_projection(rewards, dones, next_dists)
 
-        spr_projections = _spr_projections/tf.norm(_spr_projections, ord=2, axis=-1, keepdims=True)
+        # spr_projections = _spr_projections/tf.norm(_spr_projections, ord=2, axis=-1, keepdims=True)
 
         actions = actions_all[:,0].reshape((self.batch_size,1))
 
@@ -171,11 +184,11 @@ class BBFRainbowAgent:
             weighted_loss = weights*td_loss
             loss = tf.reduce_mean(weighted_loss)
 
-            _spr_predictions = self.qnet.compute_predict(z_t, actions=actions_all)
-            spr_predictions = _spr_predictions/tf.norm(_spr_projections, ord=2, axis=-1, keepdims=True)
-            loss_spr = tf.reduce_mean(tf.reduce_sum((spr_predictions - spr_projections)**2, axis=-1))
+            # _spr_predictions = self.qnet.compute_predict(z_t, actions=actions_all)
+            # spr_predictions = _spr_predictions/tf.norm(_spr_projections, ord=2, axis=-1, keepdims=True)
+            # loss_spr = tf.reduce_mean(tf.reduce_sum((spr_predictions - spr_projections)**2, axis=-1))
 
-            loss += loss_spr
+            # loss += loss_spr
 
         grads = tape.gradient(loss, self.qnet.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.qnet.trainable_variables))
@@ -239,7 +252,7 @@ class BBFRainbowAgent:
     def get_dummy(self):
         G = gen_worstcase(self.n)
         G,_ = gen_initial_graph_state(G, self.n)
-        frame = G[self.n*self.n:self.n*self.n*2].reshape((self.n,self.n))
+        frame = G[self.n*self.n:].reshape((self.n,self.n+1))
         frames = collections.deque([frame]*self.n_frames, maxlen=self.n_frames)
         dummy_state = np.stack(frames, axis=2)[np.newaxis, ...]
         dummy_mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, 0, 1).reshape(1,self.n**2)
@@ -248,21 +261,23 @@ class BBFRainbowAgent:
     
     def build_network(self):
         dummy_state, dummy_mask_post = self.get_dummy()
-        net = RainbowQNetwork(self.n, self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4)
+        net = RainbowQNetwork(self.n, self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, width_scale=4, is_noisy=self.is_noisy)
         dummy_action = net.sample_action(dummy_state, dummy_mask_post).reshape((1,1))
         _, dummy_z_t, _ = net(dummy_state)
-        net.compute_predict(dummy_z_t, dummy_action)
+        # net.compute_predict(dummy_z_t, dummy_action)
 
         return net
 
     def reset_weights(self):
         for online_network in [self.qnet, self.target_qnet]:
             random_network = self.build_network()
-            for key in ["encoder", "project1", "project2", "value", "advantages", "transition", "predict1"]:
+            # for key in ["encoder", "project1", "project2", "value", "advantages", "transition", "predict1"]:
+            for key in ["encoder", "project1", "project2", "value", "advantages"]:
                 subnet = getattr(online_network, key)
                 subnet_random = getattr(random_network, key)
-                if key in ["encoder", "transition"]:
-                    subnet.set_weights([0.5*online_param + 0.5*random_param for online_param, random_param in zip(subnet.get_weights(), subnet_random.get_weights())])
+                # if key in ["encoder", "transition"]:
+                if key in ["encoder"]:
+                    subnet.set_weights([0.8*online_param + 0.2*random_param for online_param, random_param in zip(subnet.get_weights(), subnet_random.get_weights())])
                 else:
                     subnet.set_weights(subnet_random.get_weights())
  
@@ -316,7 +331,7 @@ class NoisyDense(tf.keras.layers.Layer):
         return x
 
 class RainbowQNetwork(tf.keras.Model):
-    def __init__(self, n, action_space, Vmin, Vmax, n_atoms, width_scale, hidden_dim=2048):
+    def __init__(self, n, action_space, Vmin, Vmax, n_atoms, width_scale, hidden_dim=2048, is_noisy=True):
         super(RainbowQNetwork, self).__init__()
         self.n = n
         self.action_space = action_space
@@ -328,14 +343,20 @@ class RainbowQNetwork(tf.keras.Model):
 
         self.encoder = EncoderCNN(self.width_scale)
         self.flatten1 = kl.Flatten()
-        self.project1 = NoisyDense(self.hidden_dim, activation="relu")
-        self.project2 = NoisyDense(self.hidden_dim, activation="relu")
-        self.value = NoisyDense(1*self.n_atoms)
-        self.advantages = NoisyDense(self.action_space*self.n_atoms)
+        if is_noisy:
+            self.project1 = NoisyDense(self.hidden_dim, activation="relu")
+            self.project2 = NoisyDense(self.hidden_dim, activation="relu")
+            self.value = NoisyDense(1*self.n_atoms)
+            self.advantages = NoisyDense(self.action_space*self.n_atoms)
+        else:
+            self.project1 = kl.Dense(self.hidden_dim, activation="relu")
+            self.project2 = kl.Dense(self.hidden_dim, activation="relu")
+            self.value = kl.Dense(1*self.n_atoms)
+            self.advantages = kl.Dense(self.action_space*self.n_atoms)
 
-        latent_dim = self.encoder.base_dim[-1]*self.width_scale
-        self.transition = TransitionModel(action_space=self.action_space, latent_dim=latent_dim)
-        self.predict1 = kl.Dense(self.hidden_dim, activation=None, kernel_initializer="he_normal")
+        # latent_dim = self.encoder.base_dim[-1]*self.width_scale
+        # self.transition = TransitionModel(action_space=self.action_space, latent_dim=latent_dim)
+        # self.predict1 = kl.Dense(self.hidden_dim, activation=None, kernel_initializer="he_normal")
 
     @tf.function
     def call(self, x):
@@ -390,7 +411,7 @@ class RainbowQNetwork(tf.keras.Model):
 class EncoderCNN(tf.keras.Model):
     def __init__(self, width_scale):
         super(EncoderCNN, self).__init__()
-        self.base_dim = (16,32,32)
+        self.base_dim = (32,64,64)
         self.width_scale = width_scale
         self.conv1 = kl.Conv2D(self.base_dim[0]*self.width_scale,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
         self.conv2 = kl.Conv2D(self.base_dim[1]*self.width_scale,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
@@ -459,7 +480,7 @@ class NstepPrioritizedReplayBuffer:
 
         self.alpha = alpha
         self.beta_scheduler = (lambda steps: beta + (1 - beta)*steps/total_steps)
-        self.epsilon = 0.01
+        self.epsilon =  1e-6
         self.max_priority = 1.0
 
         self.reward_clip = reward_clip
