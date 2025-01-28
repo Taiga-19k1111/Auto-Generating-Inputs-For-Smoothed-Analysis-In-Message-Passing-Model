@@ -21,6 +21,9 @@ import yaml
 from dataclasses import dataclass
 import collections
 
+import math
+import time
+
 import pickle
 import zlib
 
@@ -33,13 +36,14 @@ class RainbowAgent:
         
         self.n = n
         self.gamma = 0.99
-        self.batch_size = 32
+        self.batch_size =  32
         self.n_frames = 4
         self.update_period = 1
         self.target_update_period = 2000
 
         self.n_atoms = 51
-        self.Vmin, self.Vmax = -10, 10
+        self.Vmin, self.Vmax = 0, 2**(4+(self.n-1)//3)
+        # self.Vmin, self.Vmax = 0, 20
         self.delta_z = (self.Vmax - self.Vmin)/(self.n_atoms - 1)
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
 
@@ -49,16 +53,17 @@ class RainbowAgent:
         self.qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, is_noisy=self.is_noisy)
         self.target_qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, is_noisy=self.is_noisy)
 
-        self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon=0.01/self.batch_size)
+        self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon= 0.01/self.batch_size)
 
-        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=False, alpha=0.6, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
+        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=False, alpha=0.5, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
 
         self.steps = 0
 
+        self.learning_ratio = 1
+
+        self.epsilon_scheduler = (lambda steps: max(1.0 - 0.9*steps/100000, 0.1))
+
     def learn(self, n_episodes):
-        E_START = 1.0
-        E_STOP = 0.1
-        E_DECAY_RATE = 0.0001
         GAMMA = 0.99
         memo_x = []
         memo_y = []
@@ -67,6 +72,9 @@ class RainbowAgent:
         total_max = 0
         initial_G = gen_worstcase(self.n)
         initial_G, initial_post = gen_initial_graph_state(initial_G, self.n)
+        loss = 0
+        epsilon = 0
+        transitions = []
         for ep in range(1,n_episodes+1):
             G = np.copy(initial_G)
             post = copy.deepcopy(initial_post)
@@ -81,22 +89,46 @@ class RainbowAgent:
                 state = np.stack(frames, axis=2)[np.newaxis, ...]
                 mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, 0, 1).reshape(1,self.n**2)
                 if self.is_noisy:
-                    action = self.qnet.sample_action(state, mask_post)
+                    action, q_means_idx = self.qnet.sample_action(state, mask_post)
+                    if ep%100 == 0:
+                        post_in_message = np.where(mask_post == 1)[1]
+                        with open(logfile, 'a') as f:
+                            print(f"{action//self.n} to {action%self.n}", file=f)
+                            text = f"{num_messages}, "
+                            for i in range(post_in_message.size):
+                                q = "{:.3f}".format(q_means_idx[i][0])
+                                ind = post_in_message[i]
+                                text += f"{ind//self.n} to {ind%self.n}:{q}, "
+                            print(text, file=f)
                 else:
-                    epsilon = E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*self.steps)
-                    print(epsilon)
-                    if epsilon > np.random.uniform(0,1,1):
+                    epsilon = self.epsilon_scheduler(self.steps)
+                    # print(epsilon)
+                    if epsilon > np.random.uniform(0,1,1) and ep%100 != 0:
                         mx = np.random.uniform(1,2,self.n**2)*mask_post.reshape(self.n**2)
                         action = np.argmax(mx)
                     else:
-                        action = self.qnet.sample_action(state, mask_post)
-                post[action].pop(0)
-                inputs = [action//self.n, action%self.n, G, post]
-                post, next_G, r = calc_reward(n, inputs, solver, tmpdir, form)
+                        action, q_means_idx = self.qnet.sample_action(state, mask_post)
+                        if ep%100 == 0:
+                        # if ep > 0:
+                            post_in_message = np.where(mask_post == 1)[1]
+                            with open(logfile, 'a') as f:
+                                print(f"{action//self.n} to {action%self.n}", file=f)
+                                text = f"{num_messages}, "
+                                for i in range(post_in_message.size):
+                                    q = "{:.3f}".format(q_means_idx[i][0])
+                                    ind = post_in_message[i]
+                                    text += f"{ind//self.n} to {ind%self.n}:{q}, "
+                                print(text, file=f)
+
+                # post[action].pop(0)
+                # inputs = [action//self.n, action%self.n, G, post]
+                # post, next_G, r = calc_reward(n, inputs, solver, tmpdir, form)
+                post, next_G = update_state(self.n, G, post, action)
                 next_frame = next_G[self.n**2:].reshape((self.n,self.n+1))
                 frames.append(next_frame)
                 next_state = np.stack(frames, axis=2)[np.newaxis, ...]
-                edges.append(inputs[0:2])
+                # edges.append(inputs[0:2])
+                edges.append([action//self.n, action%self.n])
                 G = next_G
                 next_mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, 0, 1).reshape(1,self.n**2)
 
@@ -107,42 +139,65 @@ class RainbowAgent:
                         break
 
                 if check:
-                    reward = 0
-                    transition = (state, action, reward, next_state, False, next_mask_post)
+                    reward = 1
+                    transition = (state, action, reward, next_state, False, next_mask_post, num_messages)
+                    # transition = (state, action, reward, next_state, False, next_mask_post)
                 else:
-                    reward = num_messages
-                    transition = (state, action, reward, next_state, True, next_mask_post)
-                
+                    reward = 0
+                    transition = (state, action, reward, next_state, True, next_mask_post, num_messages)
+                    # transition = (state, action, reward, next_state, False, next_mask_post)
+                # transitions.append(transition)
                 self.replay_buffer.push(transition)
 
-                if len(self.replay_buffer) >= 1000:
+                if len(self.replay_buffer) >= 10000:
                     if self.steps%self.update_period == 0:
-                        loss = self.update_network()
-                        # print(loss)
+                        # s = time.time()
+                        for _ in range(self.learning_ratio):
+                            loss = self.update_network()
+                            # print(loss)
+                        # print(time.time()-s)
                     
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
 
-            memo_x.append(ep)
-            memo_y.append(num_messages)
             ave = ((ep-1)*ave+num_messages)/ep
-            memo_ave.append(ave)
-            plt.clf()
-            plt.plot(memo_x, memo_y)
-            plt.savefig(os.path.join(savedir, 'message_num.png'))
-            plt.clf()
-            plt.plot(memo_x, memo_ave)
-            plt.savefig(os.path.join(savedir, 'ave_message_num.png'))
+            memo_y.append(num_messages)
+
+            # nm = (num_messages,)
+            # for transition in transitions:
+            #     transition += nm
+            #     self.replay_buffer.push(transition)
+
+            if ep%100 == 0:
+                memo_x.append(ep)
+                # memo_y.append(num_messages)
+                ave100 = sum(memo_y[-100:])/100
+                memo_ave.append(ave100)
+                # plt.clf()
+                # plt.plot(memo_x, memo_y)
+                # plt.savefig(os.path.join(savedir, 'message_num.png'))
+                plt.clf()
+                plt.plot(memo_x, memo_ave)
+                plt.xlabel("episodes")
+                plt.ylabel("number_of_messages")
+                plt.savefig(os.path.join(savedir, 'ave_per_100_{}.png'.format(ep)))
+                plt.savefig(os.path.join(savedir, 'ave_per_100_{}.svg'.format(ep)))
+            
+            # print(self.qnet.trainable_variables)
+            # print(ep, epsilon, num_messages)
+            with open(logfile, 'a') as f:
+                print(ep, num_messages, epsilon, file=f)
 
             if num_messages > total_max:
                 total_max = num_messages
                 output_graph(os.path.join(savedir, 'output_{}.txt'.format(total_max)), n, edges, 0)
+                # self.qnet.save_weights(os.path.join(savedir, 'max_network'))
     
     def update_network(self):
         indices, weights, (states, actions, rewards, next_states, dones, next_mask_post) = self.replay_buffer.get_minibatch(self.batch_size, self.steps)
 
-        next_actions, _ = self.qnet.sample_actions(next_states, next_mask_post)
-        _, next_probs = self.target_qnet.sample_actions(next_states, next_mask_post)
+        next_actions, _, _ = self.qnet.sample_actions(next_states, next_mask_post)
+        _, next_probs, _ = self.target_qnet.sample_actions(next_states, next_mask_post)
 
         onehot_mask = self.create_mask(next_actions)
         next_dists = tf.reduce_sum(next_probs*onehot_mask, axis=1).numpy()
@@ -153,7 +208,7 @@ class RainbowAgent:
         with tf.GradientTape() as tape:
             probs = self.qnet(states)
             dists = tf.reduce_sum(probs*onehot_mask, axis=1)
-
+            # print(np.amin(dists.numpy()))
             dists = tf.clip_by_value(dists, 1e-6, 1.0)
             td_loss = tf.reduce_sum(-1*target_dists*tf.math.log(dists), axis=1, keepdims=True)
 
@@ -161,7 +216,8 @@ class RainbowAgent:
             loss = tf.reduce_mean(weighted_loss)
 
         grads = tape.gradient(loss, self.qnet.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.qnet.trainable_variables))
+        cliped_grads = tf.clip_by_global_norm(grads, 1.0)
+        self.optimizer.apply_gradients(zip(cliped_grads[0], self.qnet.trainable_variables))
 
         td_loss = td_loss.numpy().flatten()
         self.replay_buffer.update_priority(indices, td_loss)
@@ -271,24 +327,28 @@ class RainbowQNetwork(tf.keras.Model):
     def __init__(self, action_space, Vmin, Vmax, n_atoms, is_noisy):
         super(RainbowQNetwork, self).__init__()
         self.hidden_dim = 2048
+        self.with_scale = 4
         self.action_space = action_space
         self.n_atoms = n_atoms
         self.Vmin, self.Vmax = Vmin, Vmax
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
-        self.conv1 = kl.Conv2D(32,8,strides=4,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv2 = kl.Conv2D(64,4,strides=2,padding='same',activation="relu",kernel_initializer="he_normal")
-        self.conv3 = kl.Conv2D(64,3,strides=1,padding='same',activation="relu",kernel_initializer="he_normal")
+        self.activation = tf.keras.layers.ReLU()
+        self.normalization = tf.keras.layers.BatchNormalization()
+        self.conv1 = kl.Conv2D(32,8,strides=4,padding='same',activation=self.activation,kernel_initializer="he_normal")
+        self.conv2 = kl.Conv2D(64,4,strides=2,padding='same',activation=self.activation,kernel_initializer="he_normal")
+        self.conv3 = kl.Conv2D(64,3,strides=1,padding='same',activation=self.activation,kernel_initializer="he_normal")
+        # self.encoder = ImpalaCNN(self.with_scale)
         self.flatten1 = kl.Flatten()
         if is_noisy:
-            self.dense1 = NoisyDense(self.hidden_dim, activation="relu")
-            self.dense2 = NoisyDense(self.hidden_dim, activation="relu")
+            self.dense1 = NoisyDense(self.hidden_dim, activation=self.activation)
+            self.dense2 = NoisyDense(self.hidden_dim, activation=self.activation)
             self.value = NoisyDense(1*self.n_atoms)
             self.advantages = NoisyDense(self.action_space*self.n_atoms)
         else:
-            self.dense1 = kl.Dense(self.hidden_dim, activation="relu")
-            self.dense2 = kl.Dense(self.hidden_dim, activation="relu")
-            self.value = kl.Dense(1*self.n_atoms)
-            self.advantages = kl.Dense(self.action_space*self.n_atoms)
+            self.dense1 = kl.Dense(self.hidden_dim, activation=self.activation, kernel_initializer="he_normal")
+            self.dense2 = kl.Dense(self.hidden_dim, activation=self.activation, kernel_initializer="he_normal")
+            self.value = kl.Dense(1*self.n_atoms, kernel_initializer="he_normal")
+            self.advantages = kl.Dense(self.action_space*self.n_atoms, kernel_initializer="he_normal")
 
     @tf.function
     def call(self, x):
@@ -296,7 +356,10 @@ class RainbowQNetwork(tf.keras.Model):
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
+        # x = self.encoder(x)
+        # x = self.normalization(x)
         x = self.flatten1(x)
+        # x = renormalize(x)
 
         x1 = self.dense1(x)
         value = self.value(x1)
@@ -313,10 +376,10 @@ class RainbowQNetwork(tf.keras.Model):
         return probs
 
     def sample_action(self, x, masks):
-        selected_actions, _ = self.sample_actions(x, masks)
+        selected_actions, _, q_means_idx = self.sample_actions(x, masks)
         # selected_action = selected_actions[0][0].numpy()
         selected_action = selected_actions[0][0]
-        return selected_action
+        return selected_action, q_means_idx
     
     def sample_actions(self, X, masks):
         probs = self(X)
@@ -329,9 +392,148 @@ class RainbowQNetwork(tf.keras.Model):
             if not mask.any():
                 mask = np.ones(mask.shape)
             post_in_message = np.where(mask == 1)[0]
+            # print(post_in_message)
             q_means_idx = q_means[idx,post_in_message,:]
             selected_actions[idx][0] = post_in_message[np.argmax(q_means_idx, axis=0)[0]]
-        return selected_actions, probs
+        return selected_actions, probs, q_means_idx
+
+class ImpalaCNN(tf.keras.Model):
+    def __init__(self, width_scale: int):
+        super(ImpalaCNN, self).__init__()
+        self.base_dims = (8, 16, 16)
+        self.width_scale = width_scale
+        self.resblock_1 = ResidualBlock(dims=self.base_dims[0] * self.width_scale)
+        self.resblock_2 = ResidualBlock(dims=self.base_dims[1] * self.width_scale)
+        self.resblock_3 = ResidualBlock(dims=self.base_dims[2] * self.width_scale)
+        self.normalization = tf.keras.layers.BatchNormalization()
+        # self.resblock = ResidualBlock(dims= 64)
+
+    def call(self, x):
+        x = self.resblock_1(x)
+        x = self.resblock_2(x)
+        x = self.resblock_3(x)
+        # x = self.resblock(x)
+        # x = self.normalization(x)
+        x = tf.nn.leaky_relu(x)
+        return x
+
+
+class ResidualBlock(tf.keras.Model):
+    def __init__(self, dims: int):
+        super(ResidualBlock, self).__init__()
+        self.normalization = tf.keras.layers.BatchNormalization()
+        self.conv1 = kl.Conv2D(
+            dims,
+            kernel_size=3,
+            strides=1,
+            kernel_initializer="he_normal",
+            padding="same",
+            activation=None,
+        )
+        self.conv2 = kl.Conv2D(
+            dims,
+            kernel_size=3,
+            strides=1,
+            kernel_initializer="he_normal",
+            padding="same",
+            activation=None,
+        )
+        self.conv3 = kl.Conv2D(
+            dims,
+            kernel_size=3,
+            strides=1,
+            kernel_initializer="he_normal",
+            padding="same",
+        )
+
+        self.conv4 = kl.Conv2D(
+            dims,
+            kernel_size=3,
+            strides=1,
+            kernel_initializer="he_normal",
+            padding="same",
+            activation=None,
+        )
+        self.conv5 = kl.Conv2D(
+            dims,
+            kernel_size=3,
+            strides=1,
+            kernel_initializer="he_normal",
+            padding="same",
+        )
+
+    def call(self, x_init):
+        x = self.conv1(x_init)
+        # x = self.normalization(x)
+        x = tf.nn.max_pool(x, ksize=3, strides=2, padding="SAME")
+
+        block_input = x
+        # x = self.normalization(x)
+        x = tf.nn.leaky_relu(x)
+        x = self.conv2(x)
+        # x = self.normalization(x)
+        x = tf.nn.leaky_relu(x)
+        x = self.conv3(x)
+        x += block_input
+
+        block_input = x
+        # x = self.normalization(x)
+        x = tf.nn.leaky_relu(x)
+        x = self.conv4(x)
+        # x = self.normalization(x)
+        x = tf.nn.leaky_relu(x)
+        x = self.conv5(x)
+        x += block_input
+
+        return x
+    
+class SumTree:
+    def __init__(self, capacity):
+        assert capacity&(capacity-1) == 0
+        self.capacity = capacity
+        self.values = np.zeros(2*capacity)
+
+    def __str__(self):
+        return str(self.values[self.capacity:])
+    
+    def __setitem__(self, idx, val):
+        idx = idx + self.capacity
+        self.values[idx] = val
+
+        current_idx = idx//2
+        while current_idx >= 1:
+            idx_lchild = 2*current_idx
+            idx_rchild = 2*current_idx + 1
+            self.values[current_idx] = self.values[idx_lchild] + self.values[idx_rchild]
+            current_idx //= 2
+
+    def __getitem__(self, idx):
+        idx = idx + self.capacity
+        return self.values[idx]
+    
+    def get_values(self, length):
+        return self.values[self.capacity:self.capacity+length]
+    
+    def sum(self):
+        return self.values[1]
+    
+    def sample(self, z=None):
+        z = np.random.uniform(0, self.sum()) if z is None else z
+        assert 0 <= z <= self.sum()
+
+        current_idx = 1
+        while current_idx < self.capacity:
+            idx_lchild = 2*current_idx
+            idx_rchild = 2*current_idx + 1
+
+            if z > self.values[idx_lchild]:
+                current_idx = idx_rchild
+                z -= self.values[idx_lchild]
+            else:
+                current_idx = idx_lchild
+
+        idx = current_idx - self.capacity
+        return idx
 
 @dataclass
 class Experience:
@@ -341,21 +543,24 @@ class Experience:
     next_state: np.ndarray
     done: bool
     next_mask_post: np.ndarray
+    num_messages: int
 
 class NstepPrioritizedReplayBuffer:
     def __init__(self, max_len, gamma, reward_clip, nstep_return=3, alpha=0.6, beta=0.4, total_steps=2500000):
         self.max_len = max_len
         self.gamma = gamma
         self.buffer = []
-        self.priorities = []
+        self.buffer_len = 0
+        self.priorities =  np.array([])
+        # self.priorities = SumTree(2**(int(math.log2(max_len))+1))
 
         self.nstep_return = nstep_return
         self.temp_buffer = collections.deque(maxlen=nstep_return)
 
         self.alpha = alpha
         self.beta_scheduler = (lambda steps: beta + (1 - beta)*steps/total_steps)
-        self.epsilon = 0.01
-        self.max_priority = 10**6
+        self.epsilon = 1e-6
+        self.max_priority = 1
 
         self.reward_clip = reward_clip
         self.counter = 0
@@ -369,33 +574,44 @@ class NstepPrioritizedReplayBuffer:
         if len(self.temp_buffer) == self.nstep_return:
             nstep_return = 0
             has_done = False
+            nm = self.temp_buffer[0].num_messages
             for i, exp in enumerate(self.temp_buffer):
                 reward, done = exp.reward, exp.done
                 reward = np.clip(reward, -1, 1) if self.reward_clip else reward
-                nstep_return += (self.gamma**i)*(1 - done)*reward
+                nstep_return += self.gamma**(i*(1 - done))*reward
                 if done:
                     has_done = True
                     break
-            
-            nstep_exp = Experience(self.temp_buffer[0].state, self.temp_buffer[0].action, nstep_return, self.temp_buffer[-1].next_state, has_done, self.temp_buffer[-1].next_mask_post)
+
+            nstep_exp = Experience(self.temp_buffer[0].state, self.temp_buffer[0].action, nstep_return, self.temp_buffer[i].next_state, has_done, self.temp_buffer[i].next_mask_post, self.temp_buffer[0].num_messages)
             nstep_exp = zlib.compress(pickle.dumps(nstep_exp))
 
             if self.counter == self.max_len:
                 self.counter = 0
-            
+
+            # self.max_priority = max(self.max_priority, nm)
+            # priority = nm
+            priority = self.max_priority
+            # priority = self.max_priority - (1 - self.temp_buffer[-1].num_messages)
             try:
                 self.buffer[self.counter] = nstep_exp
-                self.priorities[self.counter] = self.max_priority
+                self.priorities[self.counter] = priority
             except IndexError:
                 self.buffer.append(nstep_exp)
-                self.priorities.append(self.max_priority)
+                # self.priorities[self.counter] = priority
+                self.priorities = np.append(self.priorities, priority)
 
+            self.buffer_len = min(self.buffer_len+1,self.max_len)
             self.counter += 1
 
     def get_minibatch(self, batch_size, steps):
-        probs = np.array(self.priorities)/sum(self.priorities)
+        probs = self.priorities/np.sum(self.priorities)
         indices = np.random.choice(np.arange(len(self.buffer)), p=probs, replace=False, size=batch_size)
-
+        # probs = self.priorities.get_values(self.buffer_len)/self.priorities.sum()
+        # indices = np.zeros(batch_size, dtype=np.int32)
+        # for i in range(batch_size):
+        #     indices[i] = self.priorities.sample()
+        
         beta = self.beta_scheduler(steps)
         weights = (probs[indices]*len(self.buffer))**(-1*beta)
         weights /= weights.max()
@@ -409,6 +625,8 @@ class NstepPrioritizedReplayBuffer:
         next_states = np.vstack([exp.next_state for exp in selected_experiences]).astype(np.float32)
         dones = np.array([exp.done for exp in selected_experiences]).reshape(-1,1)
         next_post_masks = np.vstack([exp.next_mask_post for exp in selected_experiences]).astype(np.int8)
+        # all_num_messages = np.array([exp.num_messages for exp in selected_experiences]).astype(np.int32)
+        # print(all_num_messages)
 
         return indices, weights, (states, actions, rewards, next_states, dones, next_post_masks)
     
@@ -418,7 +636,16 @@ class NstepPrioritizedReplayBuffer:
             self.priorities[idx] = priority
         self.max_priority = max(self.max_priority, priorities.max())
 
-    
+def renormalize(x):
+    shape = x.shape
+    x = tf.reshape(x, shape=[shape[0], -1])
+    max_value = tf.reduce_max(x, axis=-1, keepdims=True)
+    min_value = tf.reduce_min(x, axis=-1, keepdims=True)
+    x = (x - min_value)/(max_value - min_value + 1e-5)
+    x = tf.reshape(x, shape=shape)
+
+    return x
+
 def gen_initial_graph_state(g, n):
     post = [[] for _ in range(n*n)]
     G = np.ones([(n*2)+1,n], dtype=float)*-1
@@ -432,10 +659,26 @@ def gen_initial_graph_state(g, n):
         if G[start_node][i] != -1:
             G[start_node+n][i] = G[start_node][i]
             post[start_node*n+i].append(int(G[start_node][i]))
-        G[n*2][i] = 10**8
+        G[n*2][i] = 2**((n-1)/3)
     G[n*2][start_node] = 0
 
     return np.array(G.ravel()),post
+
+def update_state(n, G, post, ind):
+    message = post[ind].pop(0)
+    receive = ind%n
+    if G[-n+receive] > message:
+        G[-n+receive] = message
+        for i in range(n):
+            if G[receive*n+i] != -1:
+                post[receive*n+i].append(message+G[receive*n+i])
+    for i in range(n*n):
+        if post[i] == []:
+            G[i+n*n] = -1
+        else:
+            G[i+n*n] = post[i][0]
+    
+    return post, G
 
 def decide_message(n, p, G, post):
     memo = []

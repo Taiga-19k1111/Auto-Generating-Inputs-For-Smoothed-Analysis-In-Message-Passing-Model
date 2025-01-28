@@ -39,22 +39,22 @@ def gen_sequence(n, p, xp):
     EPS = 1e-6
 
     # 重複あり
-    sequence = []
-    a = xp.zeros([n,n])
-    for i in range(n):
-        tmp = p[i*n:i*n+n].data
-        total = sum(tmp)
-        rnd = xp.random.uniform(0,total)
-        cum = 0
-        for j in range(n):
-            cum += tmp[j]
-            if rnd < cum:
-                sequence.append(j)
-                a[i][j] = 1
-                break
-    a = a.ravel()
-    lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
-    a_cpu = chainer.cuda.to_cpu(a)
+    # sequence = []
+    # a = xp.zeros([n,n])
+    # for i in range(n):
+    #     tmp = p[i*n:i*n+n].data
+    #     total = sum(tmp)
+    #     rnd = xp.random.uniform(0,total)
+    #     cum = 0
+    #     for j in range(n):
+    #         cum += tmp[j]
+    #         if rnd < cum:
+    #             sequence.append(j)
+    #             a[i][j] = 1
+    #             break
+    # a = a.ravel()
+    # lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
+    # a_cpu = chainer.cuda.to_cpu(a)
 
     # 重複なしver1
     # sequence = [-1 for _ in range(n)]
@@ -91,24 +91,24 @@ def gen_sequence(n, p, xp):
     #         check[i] = True
 
     # 重複なしver3〇
-    # sequence = [-1 for _ in range(n)]
-    # a = xp.zeros([n,n])
-    # order = np.random.permutation(n)
-    # decided = []
-    # for i in order:
-    #     tmp = [x for x in p[i*n:i*n+n].data]
-    #     for d in decided:
-    #         tmp[d] = 0
-    #     total = sum(tmp)
-    #     rnd = xp.random.uniform(0,total)
-    #     cum = 0
-    #     for j in range(n):
-    #         cum += tmp[j]
-    #         if rnd < cum:
-    #             sequence[j] = i
-    #             decided.append(j)
-    #             a[i][j] = 1
-    #             break
+    sequence = [-1 for _ in range(n)]
+    a = xp.zeros([n,n])
+    order = np.random.permutation(n)
+    decided = []
+    for i in order:
+        tmp = [x for x in p[i*n:i*n+n].data]
+        for d in decided:
+            tmp[d] = 0
+        total = sum(tmp)
+        rnd = xp.random.uniform(0,total)
+        cum = 0
+        for j in range(n):
+            cum += tmp[j]
+            if rnd < cum:
+                sequence[j] = i
+                decided.append(j)
+                a[i][j] = 1
+                break
 
     # 重複なしver4
     # sequence = []
@@ -203,7 +203,7 @@ def train():
     start_time = time.time()
 
     # HiSampler Training
-    while True:
+    while iteration <= conf['restart']:
         iteration += 1
         from_restart += 1
 
@@ -238,7 +238,7 @@ def train():
         ave = ave * (1 - conf['eps']) + r * conf['eps']
         aves.append(ave)
         with open(logfile, 'a') as f:
-            print(savedir, iteration, elapsed, r, len(inputs), entropy.data, global_ma, ma, ave, flush=True)
+            # print(savedir, iteration, elapsed, r, len(inputs), entropy.data, global_ma, ma, ave, flush=True)
             print(iteration, elapsed, r, len(inputs), entropy.data, global_ma, ma, ave, flush=True, file=f)
 
         f = False
@@ -270,7 +270,7 @@ def train():
             loss.backward()
             opt.update()
 
-        if stop >= conf['restart']:
+        if stop > conf['restart']:
             stop = 0
             ma = 0
             r_bests = []
