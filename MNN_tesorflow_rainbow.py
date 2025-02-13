@@ -35,15 +35,16 @@ class RainbowAgent:
         self.is_noisy = False
         
         self.n = n
-        self.gamma = 0.99
+        self.gamma = 0.9999
         self.batch_size =  32
         self.n_frames = 4
         self.update_period = 1
-        self.target_update_period = 2000
+        self.target_update_period =  2000
 
         self.n_atoms = 51
         self.Vmin, self.Vmax = 0, 2**(4+(self.n-1)//3)
-        # self.Vmin, self.Vmax = 0, 20
+        # self.Vmin, self.Vmax = 0, 100
+        # self.Vmin, self.Vmax = 0, 1000
         self.delta_z = (self.Vmax - self.Vmin)/(self.n_atoms - 1)
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
 
@@ -53,20 +54,21 @@ class RainbowAgent:
         self.qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, is_noisy=self.is_noisy)
         self.target_qnet = RainbowQNetwork(self.action_space, Vmin=self.Vmin, Vmax=self.Vmax, n_atoms=self.n_atoms, is_noisy=self.is_noisy)
 
-        self.optimizer = tf.keras.optimizers.Adam(lr=0.0001, epsilon= 0.01/self.batch_size)
+        self.optimizer = tf.keras.optimizers.Adam(lr=0.001, epsilon= 0.01/self.batch_size)
 
-        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=1000000, reward_clip=False, alpha=0.5, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
+        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len= 500000, reward_clip=False, alpha=0.5, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
 
         self.steps = 0
 
         self.learning_ratio = 1
 
-        self.epsilon_scheduler = (lambda steps: max(1.0 - 0.9*steps/100000, 0.1))
+        self.epsilon_scheduler = (lambda steps: max(1.0 - steps/100000, 0))
 
     def learn(self, n_episodes):
-        GAMMA = 0.99
+        # GAMMA = 0.999
         memo_x = []
-        memo_y = []
+        # memo_y = []
+        memo_y = [0]*100
         memo_ave = []
         ave = 0
         total_max = 0
@@ -104,6 +106,7 @@ class RainbowAgent:
                     epsilon = self.epsilon_scheduler(self.steps)
                     # print(epsilon)
                     if epsilon > np.random.uniform(0,1,1) and ep%100 != 0:
+                    # if epsilon > np.random.uniform(0,1,1):
                         mx = np.random.uniform(1,2,self.n**2)*mask_post.reshape(self.n**2)
                         action = np.argmax(mx)
                     else:
@@ -138,6 +141,7 @@ class RainbowAgent:
                         check = True
                         break
 
+                # reward = num_messages/2**(4+(self.n-1)//3)
                 if check:
                     reward = 1
                     transition = (state, action, reward, next_state, False, next_mask_post, num_messages)
@@ -160,8 +164,9 @@ class RainbowAgent:
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
 
-            ave = ((ep-1)*ave+num_messages)/ep
-            memo_y.append(num_messages)
+            # ave = ((ep-1)*ave+num_messages)/ep
+            # memo_y.append(num_messages)
+            memo_y[ep%100] = num_messages
 
             # nm = (num_messages,)
             # for transition in transitions:
@@ -171,7 +176,7 @@ class RainbowAgent:
             if ep%100 == 0:
                 memo_x.append(ep)
                 # memo_y.append(num_messages)
-                ave100 = sum(memo_y[-100:])/100
+                ave100 = sum(memo_y)/100
                 memo_ave.append(ave100)
                 # plt.clf()
                 # plt.plot(memo_x, memo_y)
@@ -551,8 +556,8 @@ class NstepPrioritizedReplayBuffer:
         self.gamma = gamma
         self.buffer = []
         self.buffer_len = 0
-        self.priorities =  np.array([])
-        # self.priorities = SumTree(2**(int(math.log2(max_len))+1))
+        # self.priorities =  np.array([])
+        self.priorities = SumTree(2**(int(math.log2(max_len))+1))
 
         self.nstep_return = nstep_return
         self.temp_buffer = collections.deque(maxlen=nstep_return)
@@ -574,7 +579,7 @@ class NstepPrioritizedReplayBuffer:
         if len(self.temp_buffer) == self.nstep_return:
             nstep_return = 0
             has_done = False
-            nm = self.temp_buffer[0].num_messages
+            # nm = self.temp_buffer[0].num_messages
             for i, exp in enumerate(self.temp_buffer):
                 reward, done = exp.reward, exp.done
                 reward = np.clip(reward, -1, 1) if self.reward_clip else reward
@@ -598,20 +603,22 @@ class NstepPrioritizedReplayBuffer:
                 self.priorities[self.counter] = priority
             except IndexError:
                 self.buffer.append(nstep_exp)
-                # self.priorities[self.counter] = priority
-                self.priorities = np.append(self.priorities, priority)
+                self.priorities[self.counter] = priority
+                # self.priorities = np.append(self.priorities, priority)
 
             self.buffer_len = min(self.buffer_len+1,self.max_len)
             self.counter += 1
 
     def get_minibatch(self, batch_size, steps):
-        probs = self.priorities/np.sum(self.priorities)
-        indices = np.random.choice(np.arange(len(self.buffer)), p=probs, replace=False, size=batch_size)
-        # probs = self.priorities.get_values(self.buffer_len)/self.priorities.sum()
-        # indices = np.zeros(batch_size, dtype=np.int32)
-        # for i in range(batch_size):
-        #     indices[i] = self.priorities.sample()
-        
+        # probs = self.priorities/np.sum(self.priorities)
+        # indices = np.random.choice(np.arange(len(self.buffer)), p=probs, replace=False, size=batch_size)
+        probs = self.priorities.get_values(self.buffer_len)/self.priorities.sum()
+        indices = np.zeros(batch_size, dtype=np.int32)
+        for i in range(batch_size):
+            idx = self.priorities.sample()
+            indices[i] = idx
+            self.priorities[idx] = 0
+        # print(indices)
         beta = self.beta_scheduler(steps)
         weights = (probs[indices]*len(self.buffer))**(-1*beta)
         weights /= weights.max()
