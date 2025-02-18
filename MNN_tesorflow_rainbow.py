@@ -32,10 +32,10 @@ from gen_SSSP_worstcase import gen_worstcase
 
 class RainbowAgent:
     def __init__(self, n):
-        self.is_noisy = False
+        self.is_noisy = True
         
         self.n = n
-        self.gamma = 0.9999
+        self.gamma = 0.99
         self.batch_size =  32
         self.n_frames = 4
         self.update_period = 1
@@ -56,7 +56,7 @@ class RainbowAgent:
 
         self.optimizer = tf.keras.optimizers.Adam(lr=0.001, epsilon= 0.01/self.batch_size)
 
-        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len= 500000, reward_clip=False, alpha=0.5, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
+        self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=250000, reward_clip=False, alpha=0.5, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
 
         self.steps = 0
 
