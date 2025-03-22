@@ -44,10 +44,12 @@ def update_state(n, G, dist, post, DM):
 
 max_count = -1
 counts = []
-rep = 100
-epsilon = 0.1
+rep = 5000
+N =  25
+np.random.seed(1234)
+epsilon = 1
+# print(epsilon)
 for _ in range(rep):
-    N = 16
     G = gen_worstcase(N)
     post, dist = gen_initial_graph_state(G,N)
     check = True

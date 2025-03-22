@@ -22,6 +22,7 @@ def decide_message(n, post):
             if message > max_message:
                 max_message = message
                 ind = i
+    # print(ind//n, ind%n)
     return ind
 
 def update_state(n, G, dist, post):

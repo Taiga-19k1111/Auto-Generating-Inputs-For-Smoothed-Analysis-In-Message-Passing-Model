@@ -61,6 +61,7 @@ def gen_initial_graph_state(g, n):
     return cp.asnumpy(G.ravel()),post
 
 def decide_message(n, p, G, post):
+    mask = np.where(G[self.n**2:(self.n**2)*2] == -1, 0, 1).reshape(1,n**2)
     memo = []
     for i in range(n*n):
         if post[i] != []:
@@ -91,7 +92,7 @@ def train():
 
     E_START = 1.0
     E_STOP = 0
-    E_DECAY_RATE = 0.00001
+    E_DECAY_RATE = 0.0001
     GAMMA = 0.99
 
     np.random.seed(conf['seed'])
@@ -106,8 +107,8 @@ def train():
 
     G = gen_worstcase(n)
     G,post = gen_initial_graph_state(G, n)
-    main_qn = QNetwork((n*n,), n*n)
-    target_qn = QNetwork((n*n,), n*n)
+    main_qn = QNetwork((n*n+n,), n*n)
+    target_qn = QNetwork((n*n+n,), n*n)
 
     epoch = conf['epoch']
     p = conf['erp']
@@ -156,7 +157,7 @@ def train():
                 ep_check = 0
             else:
                 cmnn += 1
-                mx = main_qn.model.predict(np.array([G[n*n:n*n*2]]))[0]
+                mx = main_qn.model.predict(np.array([G[n*n:]]))[0]
                 ep_check = 1
 
             # if ep%100 == 0:
@@ -175,7 +176,7 @@ def train():
             if check:
                 reward = 0
             else:
-                reward = 1-1/step
+                reward = step
             # reward = r
 
             if step > start_training:
@@ -183,15 +184,15 @@ def train():
 
             G = next_G
             if len(memory) >= pool_size and total_step >= 1000:
-                inputs = np.zeros([pool_size,n*n])
+                inputs = np.zeros([pool_size,n*n+n])
                 targets = np.zeros([pool_size,n*n])
 
                 minibatch = memory.sample(pool_size)
                 for i, [G_b,inputs_b,reward_b,next_G_b] in enumerate(minibatch):
-                    inputs[i] = G_b[n*n:n*n*2]
+                    inputs[i] = G_b[n*n:]
                     next_initial_post = (next_G_b[n*n:n*n*2] != -1)
                     if next_initial_post.any():
-                        next_q = target_qn.model.predict(np.array([next_G_b[n*n:n*n*2]]))[0]
+                        next_q = target_qn.model.predict(np.array([next_G_b[n*n:]]))[0]
                         max_q = np.amax(next_q*np.where(next_initial_post,1,0))
                         target = reward_b + GAMMA*max_q
                     else:

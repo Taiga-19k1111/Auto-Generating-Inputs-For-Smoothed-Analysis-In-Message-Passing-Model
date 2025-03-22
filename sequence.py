@@ -56,41 +56,7 @@ def gen_sequence(n, p, xp):
     # lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))
     # a_cpu = chainer.cuda.to_cpu(a)
 
-    # 重複なしver1
-    # sequence = [-1 for _ in range(n)]
-    # a = xp.zeros([n,n])
-    # order = np.random.permutation(n)
-    # for i in order:
-    #     tmp = p[i*n:i*n+n].data
-    #     tmp3 = [[tmp[j],j] for j in range(n)]
-    #     tmp3 = sorted(tmp3, reverse=True)
-    #     for j in range(n):
-    #         ind = tmp3[j][1]
-    #         if sequence[ind] == -1:
-    #             sequence[ind] = i
-    #             a[i][ind] = 1
-    #             break
-
-    # 重複なしver2
-    # sequence = [-1 for _ in range(n)]
-    # a = xp.zeros([n,n])
-    # tmp = p.data
-    # tmp2 = []
-    # for i in range(n):
-    #     for j in range(n):
-    #         tmp2.append([tmp[i*n+j],i,j])
-    # tmp2 = sorted(tmp2, reverse=True)
-    # check = [False for _ in range(n)]
-    # for k in range(n**2):
-    #     _,i,j = tmp2[k]
-    #     if check[i]:
-    #         continue
-    #     if sequence[j] == -1:
-    #         sequence[j] = i
-    #         a[i][j] = 1
-    #         check[i] = True
-
-    # 重複なしver3〇
+    # 重複なし
     sequence = [-1 for _ in range(n)]
     a = xp.zeros([n,n])
     order = np.random.permutation(n)
@@ -109,25 +75,6 @@ def gen_sequence(n, p, xp):
                 decided.append(j)
                 a[i][j] = 1
                 break
-
-    # 重複なしver4
-    # sequence = []
-    # a = xp.zeros([n,n])
-    # decided = []
-    # for i in range(n):
-    #     tmp = [x for x in p[i*n:i*n+n].data]
-    #     for d in decided:
-    #         tmp[d] = 0
-    #     total = sum(tmp)
-    #     rnd = xp.random.uniform(0,total)
-    #     cum = 0
-    #     for j in range(n):
-    #         cum += tmp[j]
-    #         if rnd < cum:
-    #             sequence.append(j)
-    #             decided.append(j)
-    #             a[i][j] = 1
-    #             break
             
     a = a.ravel()
     lp = F.sum(a * F.log(p + EPS) + (1 - a) * F.log(1 - p + EPS))

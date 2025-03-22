@@ -13,7 +13,7 @@ import chainer.links as L
 import matplotlib.pyplot as plt
 import yaml
 
-from util import calc_reward, makedir, output_graph, output_sequence, output_distribution, output_distribution_s, load_conf
+from util import calc_reward, makedir, output_sequence, output_distribution_sequence, load_conf
 
 def gen_edges(n):
     EPS = 1e-6
@@ -61,14 +61,11 @@ def train():
 
     start_time = time.time()
 
-    while True:
+    while iteration <= conf['restart']:
         iteration += 1
         from_restart += 1
 
-        if form == 0:
-            inputs = gen_edges(n)
-        elif form == 1:
-            inputs = gen_sequence(n)
+        inputs = gen_sequence(n)
 
         r = calc_reward(n, inputs, solver, tmpdir, form)
 
@@ -77,10 +74,7 @@ def train():
 
         if r > global_ma:
             global_ma = r
-            if form == 0:
-                output_graph(os.path.join(savedir, 'output_{}.txt'.format(r)), n, inputs)
-            elif form == 1:
-                output_sequence(os.path.join(savedir, 'output_{}.txt'.format(r)), n, inputs)
+            output_sequence(os.path.join(savedir, 'output_{}.txt'.format(r)), n, inputs)
 
 
         elapsed = time.time() - start_time
@@ -88,7 +82,7 @@ def train():
         ave = ave * (1 - conf['eps']) + r * conf['eps']
         aves.append(ave)
         with open(logfile, 'a') as f:
-            print(savedir, iteration, elapsed, r, len(inputs), global_ma, ma, ave, flush=True)
+            # print(savedir, iteration, elapsed, r, len(inputs), global_ma, ma, ave, flush=True)
             print(iteration, elapsed, r, len(inputs), global_ma, ma, ave, flush=True, file=f)
 
 

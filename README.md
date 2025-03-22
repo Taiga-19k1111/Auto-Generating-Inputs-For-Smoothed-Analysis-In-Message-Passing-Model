@@ -29,71 +29,35 @@ gpuの設定
 - https://www.kkaneko.jp/tools/win/chainer.html
 - yamlファイルのgpuを0に変更
 
-グラフの特徴量抽出(graph2vec)
-- karateclub(https://github.com/benedekrozemberczki/karateclub)
+yamlファイル
+ - ハイパーパラメータの指定用(頂点数など)
+ 
 
-ファイルの変更
-- util.py 63line　-> conf = yaml.safe_load(f)
-- yamlファイル全般　-> solverとdirnameを絶対パスに変更 -> 相対パスでもOK(原因不明)
+オリジナルのHiSampler → graph.py
+ - 実行方法 -> オリジナルのHiSamplerを参照(https://github.com/joisino/HiSampler)
+ - オリジナルのHiSamplerからの変更点
+    - util.py 63line　-> conf = yaml.safe_load(f)
+    - yamlファイル全般　-> solverとdirnameを絶対パスに変更 -> 相対パスでもOK(原因不明)
+ - HiSamplerの出力(log)
+    savedir, 繰り返し数, 経過時間(秒), ハードネス, 辺数, エントロピー, 最大値, 全体の最大値(リセット関係), 平均(ave = ave*(1-eps) + r*eps)
+ - yaml -> clique, coloring, vartex_cover_approx, vartex_cover
 
-出力(log)
-savedir, 繰り返し数, 経過時間(秒), ハードネス, 辺数, エントロピー, 最大値, 全体の最大値(リセット関係), 平均(ave = ave*(1-eps) + r*eps)
+クイックソート用のプログラム → sequence.py
+ - 実行方法 -> graph.pyと同様
+ - ピボット位置の変更 -> yamlファイルで指定
+    - c...center
+    - l...left
+    - r...right
+    - rnd...random
+ - 数列の重複ありなしを指定可能(gen_sequence関数(line38))
+ - ランダムに生成した数列での実験 -> random_sequence_generation.py
 
-やること
-- 簡単な逐次アルゴリズム(ex. クイックソート)での検証
-  - https://qiita.com/take_o/items/fb303c85ce2a44afaf4d#:~:text=C++%E3%81%AB%E3%82%88%E3%82%8B (クイックソート)(一部修正)
-  - NNの出力を数列に変更
-    - 各インデックスにおける各数字の生成率を設定し、累積和を求める
-     → 0~生成率の和の間で乱数を生成、乱数を超える最小の累積和のインデックスを数列の値として出力
-    - 0~n-1までの数字に優先度を設定　←没
-     → 優先度の高い順に並び変え、数列として出力
-  - 出力した数列の可視化
-  - ピボットの位置による差の検証(右端、左端、中央、ランダム)
-  - 重複の有無による差の検証
-- 分散アルゴリズムでの検証(最悪時)
-   - HiSamplerでグラフの初期状態を出力
-     → 初期状態を別のNN(学習済み)に入力(MNN)
-     → MNNによってメッセージが送信されるポストを決定し、アルゴリズムに沿ってグラフ状態を更新
-     → 次のグラフ状態をMNNに入力
-     → 終了条件を満たすまで繰り返す
-     → メッセージの送信回数を報酬としてHiSamplerを強化
-  - 最悪時グラフの初期状態から開始し終了状態になるまでメッセージを送信 ← 1エピソードとし、DQNで学習(tensorflow, AlphaZero)
-    → n=16, pool_size=10, start_training=5, epsilon=E_STOP+(E_START-E_STOP)*np.exp(-E_DECAY_RATE*total_step){E_START=1.0, E_STOP=0, E_DECAY_RATE=0.00001}, GAMMA=0.99
-    → 中間層...ユニット数16の全結合層×3(activation=relu)
-    → 1000~3000エピソードにかけてメッセージ送信数が上昇(平均は170~200まで上昇)
-    → 約6000エピソード内でのmax...約350(n=16の最悪時...434)
-- 分散アルゴリズムでの検証(平滑時)
-
-# HiSampler: Learning to Sample Hard Instances for Graph Algorithms
-
-This algorithm learns generating hard instances of graph problems automatically.
-
-https://arxiv.org/abs/1902.09700
-
-## Getting Started
-
-```
-pip install -r requirements.txt
-make solver/coloring
-python3 ./hisampler.py yamls/coloring.yaml
-ls results/coloring
-```
-
-## Train the Model with Your Own Solver
-
-Your solver must take input of the following format from the standard input.
-
-```
-n m
-a_1 b_1
-a_2 b_2
-...
-a_m b_m
-```
-
-`n` is the number of nodes, `m` is the number of edges, and `(a_i, b_i)` is the endpoints of the i-th edge.
-The indices of the vertices are numbered as 0, 1, 2, ..., n-1.
-
-Your solver must output a single value which represents the hardness value (e.g., the time consumption or the number of recursive calls).
-
-You can reuse the off-the-shelf configuration file such as `yamls/coloring.yaml` by chaning the solver path.
+メッセージパッシングモデル(単一始点最短経路問題)
+  → MNN_tensorflow.py ... DQNのみのプログラム(AlphaZeroの教科書をベースに作成)
+  → MNN_tensorflow_rainbow.py ... DQN + rainbow(参考 https://horomary.hatenablog.com/entry/2021/02/11/173638)
+  → MNN_tensorflow_rainbow_smoothed.py ... 平滑モデル導入ver
+  → MNN_tensorflow_rainbow_plus_BBF.py ... rainbow + BBF(参考 https://horomary.hatenablog.com/entry/2024/11/03/140544) (学習がうまくいかないため、何らかの不具合がある可能性あり)
+ - tensorflowを使用
+ - yaml -> shortest_path
+ - ランダムによる実験 → shortest_path_random_select.py
+ - 最悪時(一番大きいメッセージを送信) → shortest_path_worstcase_message.py
