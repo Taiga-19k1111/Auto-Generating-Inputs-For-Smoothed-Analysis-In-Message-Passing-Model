@@ -16,6 +16,7 @@ eps: 0.01
 lr: 0.0001
 noreplay: False
 
+# 下記不要
 epoch: 100000
 erp: 0.8
 message: 500

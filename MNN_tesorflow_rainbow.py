@@ -41,13 +41,13 @@ class RainbowAgent:
         self.update_period = 1
         self.target_update_period =  2000
 
+        # C51関連
         self.n_atoms = 51
         self.Vmin, self.Vmax = 0, 2**(4+(self.n-1)//3)
-        # self.Vmin, self.Vmax = 0, 100
-        # self.Vmin, self.Vmax = 0, 1000
         self.delta_z = (self.Vmax - self.Vmin)/(self.n_atoms - 1)
         self.Z = np.linspace(self.Vmin, self.Vmax, self.n_atoms)
 
+        # n_step
         self.n_step_return = 3
 
         self.action_space = self.n**2
@@ -59,15 +59,13 @@ class RainbowAgent:
         self.replay_buffer = NstepPrioritizedReplayBuffer(max_len=250000, reward_clip=False, alpha=0.5, beta=0.4, total_steps=2500000, nstep_return=self.n_step_return, gamma=self.gamma)
 
         self.steps = 0
-
         self.learning_ratio = 1
 
+        # epsilon-greedy
         self.epsilon_scheduler = (lambda steps: max(1.0 - steps/100000, 0))
 
     def learn(self, n_episodes):
-        # GAMMA = 0.999
         memo_x = []
-        # memo_y = []
         memo_y = [0]*100
         memo_ave = []
         ave = 0
@@ -104,15 +102,12 @@ class RainbowAgent:
                             print(text, file=f)
                 else:
                     epsilon = self.epsilon_scheduler(self.steps)
-                    # print(epsilon)
                     if epsilon > np.random.uniform(0,1,1) and ep%100 != 0:
-                    # if epsilon > np.random.uniform(0,1,1):
                         mx = np.random.uniform(1,2,self.n**2)*mask_post.reshape(self.n**2)
                         action = np.argmax(mx)
                     else:
                         action, q_means_idx = self.qnet.sample_action(state, mask_post)
-                        if ep%100 == 0:
-                        # if ep > 0:
+                        if ep%100 == 0: # 100エピソードごとにランダム要素なしのニューラルネットワークによる出力
                             post_in_message = np.where(mask_post == 1)[1]
                             with open(logfile, 'a') as f:
                                 print(f"{action//self.n} to {action%self.n}", file=f)
@@ -122,15 +117,18 @@ class RainbowAgent:
                                     ind = post_in_message[i]
                                     text += f"{ind//self.n} to {ind%self.n}:{q}, "
                                 print(text, file=f)
-
+                
+                # solverファイルを使用する場合
                 # post[action].pop(0)
                 # inputs = [action//self.n, action%self.n, G, post]
                 # post, next_G, r = calc_reward(n, inputs, solver, tmpdir, form)
+
+                # solverファイルを使用しない場合(shortest_path限定)
                 post, next_G = update_state(self.n, G, post, action)
+
                 next_frame = next_G[self.n**2:].reshape((self.n,self.n+1))
                 frames.append(next_frame)
                 next_state = np.stack(frames, axis=2)[np.newaxis, ...]
-                # edges.append(inputs[0:2])
                 edges.append([action//self.n, action%self.n])
                 G = next_G
                 next_mask_post = np.where(G[self.n**2:(self.n**2)*2] == -1, 0, 1).reshape(1,self.n**2)
@@ -141,16 +139,12 @@ class RainbowAgent:
                         check = True
                         break
 
-                # reward = num_messages/2**(4+(self.n-1)//3)
                 if check:
                     reward = 1
                     transition = (state, action, reward, next_state, False, next_mask_post, num_messages)
-                    # transition = (state, action, reward, next_state, False, next_mask_post)
                 else:
                     reward = 0
                     transition = (state, action, reward, next_state, True, next_mask_post, num_messages)
-                    # transition = (state, action, reward, next_state, False, next_mask_post)
-                # transitions.append(transition)
                 self.replay_buffer.push(transition)
 
                 if len(self.replay_buffer) >= 10000:
@@ -164,23 +158,12 @@ class RainbowAgent:
                     if self.steps%self.target_update_period == 0:
                         self.target_qnet.set_weights(self.qnet.get_weights())
 
-            # ave = ((ep-1)*ave+num_messages)/ep
-            # memo_y.append(num_messages)
             memo_y[ep%100] = num_messages
-
-            # nm = (num_messages,)
-            # for transition in transitions:
-            #     transition += nm
-            #     self.replay_buffer.push(transition)
 
             if ep%100 == 0:
                 memo_x.append(ep)
-                # memo_y.append(num_messages)
                 ave100 = sum(memo_y)/100
                 memo_ave.append(ave100)
-                # plt.clf()
-                # plt.plot(memo_x, memo_y)
-                # plt.savefig(os.path.join(savedir, 'message_num.png'))
                 plt.clf()
                 plt.plot(memo_x, memo_ave)
                 plt.xlabel("episodes")
@@ -188,15 +171,12 @@ class RainbowAgent:
                 plt.savefig(os.path.join(savedir, 'ave_per_100_{}.png'.format(ep)))
                 plt.savefig(os.path.join(savedir, 'ave_per_100_{}.svg'.format(ep)))
             
-            # print(self.qnet.trainable_variables)
-            # print(ep, epsilon, num_messages)
             with open(logfile, 'a') as f:
                 print(ep, num_messages, epsilon, file=f)
 
             if num_messages > total_max:
                 total_max = num_messages
                 output_graph(os.path.join(savedir, 'output_{}.txt'.format(total_max)), n, edges, 0)
-                # self.qnet.save_weights(os.path.join(savedir, 'max_network'))
     
     def update_network(self):
         indices, weights, (states, actions, rewards, next_states, dones, next_mask_post) = self.replay_buffer.get_minibatch(self.batch_size, self.steps)
@@ -213,7 +193,6 @@ class RainbowAgent:
         with tf.GradientTape() as tape:
             probs = self.qnet(states)
             dists = tf.reduce_sum(probs*onehot_mask, axis=1)
-            # print(np.amin(dists.numpy()))
             dists = tf.clip_by_value(dists, 1e-6, 1.0)
             td_loss = tf.reduce_sum(-1*target_dists*tf.math.log(dists), axis=1, keepdims=True)
 
@@ -228,7 +207,7 @@ class RainbowAgent:
         self.replay_buffer.update_priority(indices, td_loss)
 
         return loss
-
+    
     def shift_and_projection(self, rewards, dones, next_dists):
         target_dists = np.zeros((self.batch_size, self.n_atoms))
         for j in range(self.n_atoms):
@@ -723,4 +702,4 @@ if __name__ == '__main__':
     logfile = os.path.join(savedir, 'log')
     
     RA = RainbowAgent(n)
-    RA.learn(100000)
+    RA.learn(conf['iteration'])

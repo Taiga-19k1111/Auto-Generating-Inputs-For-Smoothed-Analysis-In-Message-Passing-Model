@@ -61,3 +61,5 @@ yamlファイル
  - yaml -> shortest_path
  - ランダムによる実験 → shortest_path_random_select.py
  - 最悪時(一番大きいメッセージを送信) → shortest_path_worstcase_message.py
+
+※ 全体的に冗長な部分が多めです
